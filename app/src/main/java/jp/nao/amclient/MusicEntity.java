@@ -9,12 +9,17 @@ public final class MusicEntity {
     public final List<ArtistRef> artists;
     public final MusicEntity album;
     public final long durationSeconds;
+    public final boolean ownedPlaylist;
+    public final String playlistEntryId,version;
+    public final PlaylistPolicy playlistPolicy;
     public static final class ArtistRef {
         public final String id,name;
         ArtistRef(String id,String name){this.id=id;this.name=name;}
     }
-    MusicEntity(JSONObject node) {
+    MusicEntity(JSONObject node) {this(node,false);}
+    MusicEntity(JSONObject node,boolean owned) {
         id = node.optString("id"); type = node.optString("__typename"); uri = node.optString("uri");
+        ownedPlaylist=owned&&"Playlist".equals(type);playlistEntryId=node.optString("nativePlaylistEntryId");version=node.optString("version");playlistPolicy=PlaylistPolicy.from(node);
         title = node.optString("title", node.optString("name", node.optString("shortTitle", "名称なし")));
         playParams = node.optJSONObject("playParams");
         durationSeconds=node.optLong("duration",0);
@@ -35,9 +40,10 @@ public final class MusicEntity {
     }
     public boolean hasSelection(String selection){JSONArray choices=playParams==null?null:playParams.optJSONArray("selections");if(choices!=null)for(int i=0;i<choices.length();i++)if(selection.equals(choices.optString(i)))return true;return false;}
     public boolean canPlay(){return hasSelection("PLAY")||hasSelection("SHUFFLE")||hasSelection("STATION");}
-    static MusicEntity fromEdge(JSONObject edge){
+    static MusicEntity fromEdge(JSONObject edge){return fromEdge(edge,false);}
+    static MusicEntity fromEdge(JSONObject edge,boolean owned){
         JSONObject node=edge.optJSONObject("node");if(node==null)throw new IllegalArgumentException("Missing catalog node");
-        try{JSONObject copy=new JSONObject(node.toString());if(edge.optJSONObject("playParams")!=null)copy.put("playParams",edge.getJSONObject("playParams"));return new MusicEntity(copy);}
+        try{JSONObject copy=new JSONObject(node.toString());if(edge.optJSONObject("playParams")!=null)copy.put("playParams",edge.getJSONObject("playParams"));String entry=edge.optString("itemId","");if(!entry.isEmpty())copy.put("nativePlaylistEntryId",entry);return new MusicEntity(copy,owned);}
         catch(JSONException invalid){throw new IllegalArgumentException("Invalid catalog node",invalid);}
     }
     public boolean canSelectTracks(){

@@ -17,7 +17,7 @@ final class LibraryPage {
         return vars;
     }
     static CatalogPage playlists(JSONObject user) throws JSONException {
-        CatalogPage owned=CatalogPage.connection(null,user.optJSONObject("playlists"));
+        CatalogPage owned=CatalogPage.connection(null,user.optJSONObject("playlists"),true);
         JSONObject following=user.optJSONObject("followedPlaylists");
         JSONArray edges=following==null?null:following.optJSONArray("edges");
         JSONArray active=new JSONArray();

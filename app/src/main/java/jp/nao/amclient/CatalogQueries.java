@@ -7,6 +7,7 @@ final class CatalogQueries {
     private static final String PLAY="playParams { id containerIds selections } ";
     private static final String ALBUM="__typename id uri title trackCount "+IMAGES+ARTISTS+PLAY;
     private static final String PLAYLIST="__typename id uri title trackCount "+IMAGES+PLAY;
+    private static final String EDIT="version eligibility { playlist { canAddTracks canDeletePlaylist canRemoveTracks canRenamePlaylist canReorderTracks } } capabilities { appendTracks { isAllowed } removeTracks { isAllowed } } ";
     private static final String TRACK="__typename id uri title duration "+IMAGES+ARTISTS+PLAY;
     private static final String ARTIST="__typename id uri name "+IMAGES+PLAY;
     private static final String PAGE="pageInfo { hasNextPage token endCursor } ";
@@ -22,7 +23,12 @@ final class CatalogQueries {
             case "NativeArtistAlbums":return "query NativeArtistAlbums($id:String!,$cursor:String) { artist(id:$id) { "+ARTIST+" albums(limit:20,cursor:$cursor,sortBy:\"release\") { edges { node { "+ALBUM+" } } "+PAGE+" } } }";
             case "NativeArtistPlaylists":return "query NativeArtistPlaylists($id:String!,$recommender:String!,$cursor:String) { artist(id:$id) { "+ARTIST+" } recommender(id:$recommender,limit:20,cursor:$cursor) { edges { node { recommendedContent { edges { node { __typename ... on Playlist { "+PLAYLIST+" } } } "+PAGE+" } } } } }";
             case "NativeAlbum":return "query NativeAlbum($id:String!) { album(id:$id) { "+ALBUM+" tracks { "+TRACK+" } } }";
-            case "NativePlaylist":return "query NativePlaylist($id:String!,$cursor:String) { playlist(id:$id) { "+PLAYLIST+" tracks(limit:100,cursor:$cursor) { edges { playParams { id containerIds selections } node { "+TRACK+" } } "+PAGE+" } } }";
+            case "NativePlaylist":return "query NativePlaylist($id:String!,$cursor:String) { playlist(id:$id) { "+PLAYLIST+EDIT+" tracks(limit:100,cursor:$cursor) { edges { itemId playParams { id containerIds selections } node { "+TRACK+" } } "+PAGE+" } } }";
+            case "NativeOwnedPlaylists":return "query NativeOwnedPlaylists($cursor:String) { user { playlists(limit:50,cursor:$cursor,sortBy:\"LAST_MODIFIED_DATE\") { edges { node { "+PLAYLIST+EDIT+" } } "+PAGE+" } } }";
+            case "NativeCreatePlaylist":return "mutation NativeCreatePlaylist($title:String!) { createPlaylist(title:$title,visibility:\"PRIVATE\") { id } }";
+            case "NativeUpdatePlaylist":return "mutation NativeUpdatePlaylist($input:BatchUpdatePlaylistInput!) { batchUpdatePlaylist(input:$input) { playlist { id title } } }";
+            case "NativeAppendPlaylist":return "mutation NativeAppendPlaylist($id:String!,$track:String!) { appendTracks(playlistId:$id,trackIds:[$track],rejectDuplicateTracks:false) { id } }";
+            case "NativeDeletePlaylist":return "mutation NativeDeletePlaylist($id:String!) { deletePlaylist(id:$id) { id isDeleted } }";
             default:return null;
         }
     }

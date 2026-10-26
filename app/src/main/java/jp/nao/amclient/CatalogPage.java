@@ -9,10 +9,13 @@ final class CatalogPage {
     final String cursor;
     CatalogPage(MusicEntity owner,List<MusicEntity> items,String cursor){this.owner=owner;this.items=Collections.unmodifiableList(new ArrayList<>(items));this.cursor=cursor;}
     static CatalogPage connection(MusicEntity owner,JSONObject connection){
+        return connection(owner,connection,false);
+    }
+    static CatalogPage connection(MusicEntity owner,JSONObject connection,boolean owned){
         List<MusicEntity> items=new ArrayList<>();JSONArray edges=connection==null?null:connection.optJSONArray("edges");
         if(edges!=null)for(int i=0;i<edges.length();i++){
             JSONObject edge=edges.optJSONObject(i);if(edge==null||edge.optJSONObject("node")==null||edge.optJSONObject("node").optString("id").isEmpty())continue;
-            items.add(MusicEntity.fromEdge(edge));
+            items.add(MusicEntity.fromEdge(edge,owned));
         }
         return new CatalogPage(owner,items,cursor(connection));
     }
@@ -24,7 +27,8 @@ final class CatalogPage {
     }
     static List<MusicEntity> append(List<MusicEntity> old,List<MusicEntity> next){
         LinkedHashMap<String,MusicEntity> unique=new LinkedHashMap<>();
-        for(MusicEntity item:old)unique.put(item.id,item);for(MusicEntity item:next)unique.putIfAbsent(item.id,item);
+        for(MusicEntity item:old)unique.put(key(item),item);for(MusicEntity item:next)unique.putIfAbsent(key(item),item);
         return new ArrayList<>(unique.values());
     }
+    private static String key(MusicEntity item){return item.playlistEntryId.isEmpty()?item.id:"entry:"+item.playlistEntryId;}
 }

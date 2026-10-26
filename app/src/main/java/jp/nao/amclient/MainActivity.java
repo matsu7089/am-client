@@ -30,7 +30,8 @@ public class MainActivity extends Activity {
     private EditText input;
     private LinearLayout categories,libraryCategories,searchBar;
     private CatalogAdapter adapter;
-    private Button more;
+    private Button more,createPlaylist;
+    private long playlistRevision=PlaylistApi.revision.get();
     private MiniPlayerView miniPlayer;
     private BottomNavigationView navigation;
     private boolean downloads,bound,searchMode,loading,showDownloadStatus,searchLoaded;
@@ -60,6 +61,7 @@ public class MainActivity extends Activity {
             Button button=tab(value.label,()->{category=value;showDownloadStatus=false;refreshDownloadStatus();if(downloads){downloadCategory=value;renderDownloads();}else if(searchMode){searchCategory=value;updateTabs();if(!loading)renderSearch();}});button.setPadding(dp(4),0,dp(4),0);categoryButtons.put(value,button);categories.addView(button);
         }root.addView(categories);categories.setVisibility(View.GONE);
         libraryCategories=row();for(LibraryCategory value:LibraryCategory.values()){Button button=tab(value.label,()->{libraryCategory=value;showDownloadStatus=false;loadLibrary(false);});libraryButtons.put(value,button);libraryCategories.addView(button);}root.addView(libraryCategories);
+        createPlaylist=button("＋ プレイリストを作成",()->PlaylistActivity.open(this,""));createPlaylist.setContentDescription("プレイリストを作成");root.addView(createPlaylist,new LinearLayout.LayoutParams(-1,dp(48)));createPlaylist.setVisibility(View.GONE);
         state=text("読み込んでいます…",13,Color.LTGRAY);state.setPadding(dp(16),dp(8),dp(16),dp(8));root.addView(state);
         downloadStatus=text("",13,ACCENT);downloadStatus.setPadding(dp(16),0,dp(16),dp(8));downloadStatus.setVisibility(View.GONE);root.addView(downloadStatus);
         FrameLayout content=new FrameLayout(this);ListView results=new ListView(this);results.setDivider(new android.graphics.drawable.ColorDrawable(0xff26343b));results.setDividerHeight(dp(1));results.setCacheColorHint(BG);
@@ -83,6 +85,7 @@ public class MainActivity extends Activity {
         GradientDrawable background=new GradientDrawable();background.setColor(0xff28383e);background.setCornerRadius(dp(8));image.setBackground(background);image.setClipToOutline(true);image.setMinimumWidth(dp(size));return image;}
     private boolean showingHistory(){return !downloads&&!searchMode&&libraryCategory==LibraryCategory.HISTORY;}
     private void updateTabs(){boolean library=!downloads&&!searchMode;categories.setVisibility(library?View.GONE:View.VISIBLE);libraryCategories.setVisibility(library?View.VISIBLE:View.GONE);searchBar.setVisibility(searchMode?View.VISIBLE:View.GONE);
+        createPlaylist.setVisibility(library&&libraryCategory==LibraryCategory.PLAYLISTS?View.VISIBLE:View.GONE);
         BottomNavigationView.Section section=downloads?BottomNavigationView.Section.DOWNLOADS:searchMode?BottomNavigationView.Section.SEARCH:BottomNavigationView.Section.LIBRARY;getIntent().putExtra("section",section.name());getIntent().removeExtra("destination");navigation.select(section);heading.setText(section.label);
         for(Map.Entry<LibraryCategory,Button> entry:libraryButtons.entrySet()){boolean selected=entry.getKey()==libraryCategory;entry.getValue().setSelected(selected);entry.getValue().setTextColor(selected?ACCENT:Color.LTGRAY);entry.getValue().setBackgroundColor(selected?0xff243c40:Color.TRANSPARENT);}
         for(Map.Entry<SearchCategory,Button> entry:categoryButtons.entrySet()){
@@ -140,7 +143,7 @@ public class MainActivity extends Activity {
             }else holder=(RowHolder)recycled.getTag();
             final Runnable action;Runnable replay=null;String title,subtitle,url;boolean selectable=false;
             if(offlineRows){JSONObject item=saved.get(position);title=item.optString("title");subtitle=item.optString("artist")+(SavedTrack.isStream(item)?" · 保存音源 · "+SavedTrack.quality(item).kbps+" kbps":"");url=item.optString("artwork");action=()->{if(playback!=null)playback.playOffline(item);};}
-            else{MusicEntity entity=entries.get(position);title=entity.title;subtitle=entity.subtitle;url=entity.artworkUrl;selectable=entity.canSelectTracks();boolean openCollection="Album".equals(entity.type)||"Playlist".equals(entity.type);action=()->{if("Artist".equals(entity.type))BrowseActivity.artist(MainActivity.this,entity.id);else if(openCollection){if(downloads)BrowseActivity.savedCollection(MainActivity.this,entity.type,entity.id);else BrowseActivity.collection(MainActivity.this,entity.type,entity.id);}else if(playback!=null)playback.play(entity);};
+            else{MusicEntity entity=entries.get(position);title=entity.title;subtitle=entity.subtitle;url=entity.artworkUrl;selectable=entity.canSelectTracks();boolean openCollection="Album".equals(entity.type)||"Playlist".equals(entity.type);action=()->{if("Artist".equals(entity.type))BrowseActivity.artist(MainActivity.this,entity.id);else if(openCollection){if(downloads)BrowseActivity.savedCollection(MainActivity.this,entity.type,entity.id);else if(!searchMode&&!historyRows&&entity.ownedPlaylist)BrowseActivity.ownedPlaylist(MainActivity.this,entity.id);else BrowseActivity.collection(MainActivity.this,entity.type,entity.id);}else if(playback!=null)playback.play(entity);};
                 if(historyRows){String type=MusicEntity.typeLabel(entity.type);subtitle=type+(type.equals(subtitle)?"":" · "+subtitle);replay=()->{if(playback!=null)playback.playHistory(entity);};}}
             holder.title.setText(title);
             if(selectable){SpannableString description=new SpannableString(subtitle+"　曲を選んで再生");description.setSpan(new ForegroundColorSpan(ACCENT),subtitle.length()+1,description.length(),Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);holder.subtitle.setText(description);}
@@ -164,8 +167,9 @@ public class MainActivity extends Activity {
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);String section=getIntent().getStringExtra("section");setIntent(intent);getIntent().putExtra("section",section);if(intent.getBooleanExtra("showDownloads",false))downloadList();else if(intent.hasExtra("destination"))selectSection(BottomNavigationView.Section.parse(intent.getStringExtra("destination")));}
     @Override protected void onActivityResult(int code,int result,Intent data){super.onActivityResult(code,result,data);if(code==10&&result==RESULT_OK){libraryPages.clear();searchResults=Collections.emptyList();searchLoaded=false;query="";input.setText("");library();}}
     private void setTextIfChanged(TextView view,String value){if(!TextUtils.equals(view.getText(),value))view.setText(value);}
-    private final Runnable tick=new Runnable(){public void run(){miniPlayer.update(playback);main.postDelayed(this,500);}};
-    @Override protected void onStart(){super.onStart();androidx.core.content.ContextCompat.registerReceiver(this,downloadReceiver,new IntentFilter(OfflineDownloadService.STATUS),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);androidx.core.content.ContextCompat.registerReceiver(this,historyReceiver,new IntentFilter(HistoryStore.CHANGED),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);OfflineDownloadService.reconcileStatus(this);refreshDownloadStatus();if(downloads)renderDownloads();else if(showingHistory())renderHistory();main.post(tick);}
+    private void refreshPlaylists(){long current=PlaylistApi.revision.get();if(playlistRevision==current)return;playlistRevision=current;libraryPages.remove(LibraryCategory.PLAYLISTS);if(!downloads&&!searchMode&&libraryCategory==LibraryCategory.PLAYLISTS)loadLibrary(false);}
+    private final Runnable tick=new Runnable(){public void run(){refreshPlaylists();miniPlayer.update(playback);main.postDelayed(this,500);}};
+    @Override protected void onStart(){super.onStart();androidx.core.content.ContextCompat.registerReceiver(this,downloadReceiver,new IntentFilter(OfflineDownloadService.STATUS),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);androidx.core.content.ContextCompat.registerReceiver(this,historyReceiver,new IntentFilter(HistoryStore.CHANGED),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);OfflineDownloadService.reconcileStatus(this);refreshPlaylists();refreshDownloadStatus();if(downloads)renderDownloads();else if(showingHistory())renderHistory();main.post(tick);}
     @Override protected void onStop(){main.removeCallbacks(tick);unregisterReceiver(downloadReceiver);unregisterReceiver(historyReceiver);super.onStop();}
     @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putString("input",input.getText().toString());out.putBoolean("search",searchMode);out.putBoolean("downloads",downloads);out.putString("query",query);out.putString("searchCategory",searchCategory.name());out.putString("libraryCategory",libraryCategory.name());out.putString("downloadCategory",downloadCategory.name());}
     @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);thumbnails.close();miniPlayer.close();if(bound)unbindService(connection);work.shutdownNow();super.onDestroy();}

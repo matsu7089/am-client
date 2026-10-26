@@ -10,7 +10,7 @@ public class LibraryPageTest {
     @Test public void combinesOwnedAndFollowedWithoutDuplicatesOrUnfollowedItems()throws Exception{
         JSONObject user=new JSONObject().put("playlists",connection(new JSONArray().put(edge("owned",true)),""))
             .put("followedPlaylists",connection(new JSONArray().put(edge("owned",true)).put(edge("followed",true)).put(edge("removed",false)),""));
-        CatalogPage page=LibraryPage.playlists(user);assertEquals(2,page.items.size());assertEquals("owned",page.items.get(0).id);assertEquals("followed",page.items.get(1).id);assertEquals("",page.cursor);
+        CatalogPage page=LibraryPage.playlists(user);assertEquals(2,page.items.size());assertEquals("owned",page.items.get(0).id);assertEquals("followed",page.items.get(1).id);assertEquals("",page.cursor);assertTrue(page.items.get(0).ownedPlaylist);assertFalse(page.items.get(1).ownedPlaylist);
     }
     @Test public void onlyRequestsConnectionsWithRemainingPages()throws Exception{
         CatalogPage page=LibraryPage.playlists(new JSONObject().put("playlists",connection(new JSONArray(),""))

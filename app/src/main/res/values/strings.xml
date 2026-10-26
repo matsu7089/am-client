@@ -1,1 +1,8 @@
-<resources><string name="brand">♫  AM Client</string><string name="connecting">Amazon Music に接続しています…</string></resources>
+<resources>
+    <string name="brand">♫  AM Client</string>
+    <string name="connecting">Amazon Music に接続しています…</string>
+    <string name="playlist_track_count">%1$d曲</string>
+    <string name="playlist_search_count">検索結果 · %1$d件</string>
+    <string name="playlist_change_count">%1$s · %2$d曲</string>
+    <string name="playlist_numbered_track">%1$d. %2$s</string>
+</resources>

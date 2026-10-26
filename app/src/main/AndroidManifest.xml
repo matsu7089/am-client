@@ -12,6 +12,7 @@
         <activity android:name=".LoginActivity" android:exported="false" />
         <activity android:name=".BrowseActivity" android:exported="false" />
         <activity android:name=".PlayerActivity" android:exported="false" />
+        <activity android:name=".PlaylistActivity" android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" android:windowSoftInputMode="adjustResize" />
         <service android:name=".PlaybackService" android:exported="false" android:foregroundServiceType="mediaPlayback">
             <intent-filter><action android:name="androidx.media3.session.MediaSessionService" /></intent-filter>
         </service>

@@ -29,7 +29,8 @@ public class BrowseActivity extends Activity {
     private TextView heading,name,summary,status,empty,downloadStatus;
     private ImageView image;
     private LinearLayout people,tabs;
-    private Button primary,albums,playlistTab,more,download;
+    private Button primary,albums,playlistTab,more,download,edit;
+    private long playlistRevision=PlaylistApi.revision.get();
     private MiniPlayerView miniPlayer;
     private MusicEntity pendingDownload;
     private final BroadcastReceiver downloadReceiver=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){updateDownload();}};
@@ -42,6 +43,7 @@ public class BrowseActivity extends Activity {
     static void now(Context context){context.startActivity(BottomNavigationView.inherit(context,new Intent(context,BrowseActivity.class).putExtra("kind",NOW)));}
     static void artist(Context context,String id){open(context,ARTIST,id);}
     static void collection(Context context,String type,String id){open(context,type,id);}
+    static void ownedPlaylist(Context context,String id){context.startActivity(BottomNavigationView.inherit(context,new Intent(context,BrowseActivity.class).putExtra("kind","Playlist").putExtra("id",id).putExtra("editablePlaylist",true)));}
     static void collection(Context context,String type,String id,boolean savedOnly){context.startActivity(BottomNavigationView.inherit(context,new Intent(context,BrowseActivity.class).putExtra("kind",type).putExtra("id",id).putExtra("savedOnly",savedOnly)));}
     static void savedCollection(Context context,String type,String id){context.startActivity(BottomNavigationView.inherit(context,new Intent(context,BrowseActivity.class).putExtra("kind",type).putExtra("id",id).putExtra("downloaded",true)));}
     private static void open(Context context,String type,String id){context.startActivity(BottomNavigationView.inherit(context,new Intent(context,BrowseActivity.class).putExtra("kind",type).putExtra("id",id)));}
@@ -60,6 +62,7 @@ public class BrowseActivity extends Activity {
         HorizontalScrollView artistScroll=new HorizontalScrollView(this);artistScroll.setHorizontalScrollBarEnabled(false);people=row();people.setPadding(dp(8),0,dp(8),0);artistScroll.addView(people);root.addView(artistScroll);
         LinearLayout actions=row();primary=tab(ARTIST.equals(kind)?"ランダム再生":"全曲を再生",this::playOwner);primary.setEnabled(false);actions.addView(primary);
         download=tab("ダウンロード",this::downloadCollection);download.setVisibility(ARTIST.equals(kind)?View.GONE:View.VISIBLE);download.setEnabled(false);actions.addView(download);root.addView(actions);
+        edit=tab("編集",()->PlaylistActivity.open(this,id));edit.setContentDescription("自作プレイリストを編集");edit.setVisibility(View.GONE);actions.addView(edit);
         downloadStatus=text("",12,ACCENT);downloadStatus.setPadding(dp(16),0,dp(16),dp(6));downloadStatus.setVisibility(ARTIST.equals(kind)?View.GONE:View.VISIBLE);root.addView(downloadStatus);
         tabs=row();albums=tab("アルバム",()->switchTab(false));playlistTab=tab("プレイリスト",()->switchTab(true));tabs.addView(albums);tabs.addView(playlistTab);tabs.setVisibility(ARTIST.equals(kind)?View.VISIBLE:View.GONE);root.addView(tabs);updateTabs();
         status=text("読み込んでいます…",12,Color.LTGRAY);status.setPadding(dp(16),dp(8),dp(16),dp(8));root.addView(status);
@@ -80,6 +83,7 @@ public class BrowseActivity extends Activity {
         final PlaybackOrigin source=NOW.equals(kind)?playback.origin:null;
         if(NOW.equals(kind)){seenTrack=trackId;seenOrigin=source;}
         loading=true;more.setEnabled(false);status.setText("読み込んでいます…");empty.setText("");
+        edit.setEnabled(false);
         if(!append){items=Collections.emptyList();cursor="";adapter.notifyDataSetChanged();more.setVisibility(View.GONE);}
         work.execute(()->{try{
             AmazonApi api=AmazonApi.get(this);MusicEntity track=metadata;CatalogPage page;
@@ -110,6 +114,7 @@ public class BrowseActivity extends Activity {
         summary.setText(NOW.equals(kind)?"再生中: "+(current==null?"":current.title):ARTIST.equals(kind)&&!owner.hasSelection("PLAY")?"アーティスト · Amazon の選曲でシャッフル":MusicEntity.typeLabel(owner.type));
         boolean random=ARTIST.equals(kind);primary.setText(random?"ランダム再生":owner.hasSelection("PLAY")?"全曲を再生":owner.hasSelection("SHUFFLE")?"シャッフル再生":"おまかせ再生");
         primary.setEnabled(random?(owner.hasSelection("SHUFFLE")||owner.hasSelection("PLAY")):owner.canPlay());
+        boolean editable=getIntent().getBooleanExtra("editablePlaylist",false)&&"Playlist".equals(kind)&&(owner.playlistPolicy.rename||owner.playlistPolicy.delete);edit.setVisibility(editable?View.VISIBLE:View.GONE);edit.setEnabled(editable);
     }
     private boolean savedPlayback(){return getIntent().getBooleanExtra("downloaded",false)||getIntent().getBooleanExtra("savedOnly",false)||NOW.equals(kind)&&playback!=null&&playback.requiresSavedAudio();}
     private void playOwner(){if(playback==null||owner==null)return;if(ARTIST.equals(kind))playback.playRandom(owner);else if(savedPlayback())playback.playSavedFromCollection(owner,owner);else playback.play(owner);}
@@ -172,7 +177,8 @@ public class BrowseActivity extends Activity {
     private ImageView artwork(){ImageView v=new ImageView(this);v.setScaleType(ImageView.ScaleType.CENTER_CROP);v.setImageResource(R.drawable.ic_music);v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);GradientDrawable bg=new GradientDrawable();bg.setColor(0xff28383e);bg.setCornerRadius(dp(8));v.setBackground(bg);v.setClipToOutline(true);return v;}
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     private String duration(long seconds){return String.format(Locale.ROOT,"%d:%02d",seconds/60,seconds%60);}
-    @Override protected void onStart(){super.onStart();androidx.core.content.ContextCompat.registerReceiver(this,downloadReceiver,new IntentFilter(OfflineDownloadService.STATUS),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);OfflineDownloadService.reconcileStatus(this);main.post(tick);}
+    @Override protected void onStart(){super.onStart();androidx.core.content.ContextCompat.registerReceiver(this,downloadReceiver,new IntentFilter(OfflineDownloadService.STATUS),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);OfflineDownloadService.reconcileStatus(this);long current=PlaylistApi.revision.get();if(playlistRevision!=current){playlistRevision=current;if("Playlist".equals(kind))load(false);}main.post(tick);}
+    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==27&&result==RESULT_OK)finish();}
     @Override protected void onStop(){main.removeCallbacks(tick);unregisterReceiver(downloadReceiver);super.onStop();}
     @Override protected void onSaveInstanceState(Bundle saved){super.onSaveInstanceState(saved);saved.putBoolean("playlists",playlists);}
     @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);work.shutdownNow();thumbnails.close();if(miniPlayer!=null)miniPlayer.close();if(bound)unbindService(connection);super.onDestroy();}
