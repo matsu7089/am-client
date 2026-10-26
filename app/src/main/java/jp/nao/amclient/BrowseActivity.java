@@ -42,6 +42,7 @@ public class BrowseActivity extends Activity {
     static void now(Context context){context.startActivity(BottomNavigationView.inherit(context,new Intent(context,BrowseActivity.class).putExtra("kind",NOW)));}
     static void artist(Context context,String id){open(context,ARTIST,id);}
     static void collection(Context context,String type,String id){open(context,type,id);}
+    static void collection(Context context,String type,String id,boolean savedOnly){context.startActivity(BottomNavigationView.inherit(context,new Intent(context,BrowseActivity.class).putExtra("kind",type).putExtra("id",id).putExtra("savedOnly",savedOnly)));}
     static void savedCollection(Context context,String type,String id){context.startActivity(BottomNavigationView.inherit(context,new Intent(context,BrowseActivity.class).putExtra("kind",type).putExtra("id",id).putExtra("downloaded",true)));}
     private static void open(Context context,String type,String id){context.startActivity(BottomNavigationView.inherit(context,new Intent(context,BrowseActivity.class).putExtra("kind",type).putExtra("id",id)));}
     @Override public void onCreate(Bundle saved){
@@ -110,7 +111,7 @@ public class BrowseActivity extends Activity {
         boolean random=ARTIST.equals(kind);primary.setText(random?"ランダム再生":owner.hasSelection("PLAY")?"全曲を再生":owner.hasSelection("SHUFFLE")?"シャッフル再生":"おまかせ再生");
         primary.setEnabled(random?(owner.hasSelection("SHUFFLE")||owner.hasSelection("PLAY")):owner.canPlay());
     }
-    private boolean savedPlayback(){return getIntent().getBooleanExtra("downloaded",false)||NOW.equals(kind)&&playback!=null&&playback.requiresSavedAudio();}
+    private boolean savedPlayback(){return getIntent().getBooleanExtra("downloaded",false)||getIntent().getBooleanExtra("savedOnly",false)||NOW.equals(kind)&&playback!=null&&playback.requiresSavedAudio();}
     private void playOwner(){if(playback==null||owner==null)return;if(ARTIST.equals(kind))playback.playRandom(owner);else if(savedPlayback())playback.playSavedFromCollection(owner,owner);else playback.play(owner);}
     private void downloadCollection(){
         if(owner==null||ARTIST.equals(kind))return;

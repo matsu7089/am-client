@@ -26,7 +26,7 @@ final class PlayerViews {
     static void enabled(View v,boolean enabled){v.setEnabled(enabled);v.setAlpha(enabled?1f:.35f);}
     static void insets(LinearLayout root){root.setBackgroundColor(BG);root.setOnApplyWindowInsetsListener((v,i)->{v.setPadding(i.getSystemWindowInsetLeft(),i.getSystemWindowInsetTop(),i.getSystemWindowInsetRight(),i.getSystemWindowInsetBottom());return i.consumeSystemWindowInsets();});}
     static String time(long millis){long seconds=Math.max(0,millis)/1000;return String.format(Locale.ROOT,"%d:%02d",seconds/60,seconds%60);}
-    enum Icon {SEARCH,LIBRARY,DOWNLOAD,PLAY,PAUSE,NEXT,PREVIOUS,SHUFFLE,REPEAT,REPEAT_ONE,DOWN,SETTINGS}
+    enum Icon {SEARCH,LIBRARY,DOWNLOAD,PLAY,PAUSE,NEXT,PREVIOUS,SHUFFLE,REPEAT,REPEAT_ONE,DOWN,SETTINGS,ACCOUNT}
     /** Vector strokes avoid font-dependent transport glyphs and extra bitmap assets. */
     private static final class Symbol extends Drawable {
         private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -41,13 +41,19 @@ final class PlayerViews {
                 case PAUSE:paint.setStyle(Paint.Style.FILL);c.drawRoundRect(6,4,10,20,1,1,paint);c.drawRoundRect(14,4,18,20,1,1,paint);break;
                 case PREVIOUS:c.save();c.translate(24,0);c.scale(-1,1);skip(c);c.restore();break;
                 case NEXT:skip(c);break;
-                case SHUFFLE:path(c,3,5,6,5,17,19,21,19);path(c,17,15,21,19,17,23);path(c,3,19,6,19,17,5,21,5);path(c,17,1,21,5,17,9);break;
+                case SHUFFLE:shuffle(c);break;
                 case REPEAT:case REPEAT_ONE:path(c,4,10,4,6,20,6,17,3);path(c,20,6,17,9);path(c,20,14,20,18,4,18,7,21);path(c,4,18,7,15);if(icon==Icon.REPEAT_ONE){paint.setStyle(Paint.Style.FILL);paint.setTextSize(8);paint.setTypeface(Typeface.DEFAULT_BOLD);c.drawText("1",10,15,paint);}break;
                 case DOWN:path(c,5,9,12,16,19,9);break;
                 case SETTINGS:c.drawCircle(12,12,3,paint);c.drawCircle(12,12,8,paint);for(int i=0;i<8;i++){double a=i*Math.PI/4;line(c,(float)(12+8*Math.cos(a)),(float)(12+8*Math.sin(a)),(float)(12+10*Math.cos(a)),(float)(12+10*Math.sin(a)));}break;
+                case ACCOUNT:c.drawCircle(12,7,3.5f,paint);Path shoulders=new Path();shoulders.moveTo(4,21);shoulders.lineTo(4,18);shoulders.cubicTo(4,11.5f,20,11.5f,20,18);shoulders.lineTo(20,21);shoulders.close();c.drawPath(shoulders,paint);break;
             }c.restore();
         }
         private void skip(Canvas c){paint.setStyle(Paint.Style.FILL);path(c,5,5,16,12,5,19,5,5);c.drawRoundRect(17,5,19,19,.7f,.7f,paint);}
+        private void shuffle(Canvas c){
+            Path down=new Path();down.moveTo(3,6);down.lineTo(5,6);down.cubicTo(10,6,12,18,17,18);down.lineTo(21,18);c.drawPath(down,paint);
+            Path up=new Path();up.moveTo(3,18);up.lineTo(5,18);up.cubicTo(10,18,12,6,17,6);up.lineTo(21,6);c.drawPath(up,paint);
+            path(c,18,3,21,6,18,9);path(c,18,15,21,18,18,21);
+        }
         private void line(Canvas c,float x,float y,float a,float b){c.drawLine(x,y,a,b,paint);}
         private void path(Canvas c,float... xy){Path p=new Path();p.moveTo(xy[0],xy[1]);for(int i=2;i<xy.length;i+=2)p.lineTo(xy[i],xy[i+1]);c.drawPath(p,paint);}
         @Override public int getIntrinsicWidth(){return size;}
