@@ -1,0 +1,254 @@
+# 0.2.0 検証記録
+
+## 実サイト API の確認
+
+Chrome DevTools MCP の認証済みセッションで、公式プレイヤー UI を操作せず fetch で確認。
+
+- 検索: アプリで使用する SpecSearchPage の変数で HTTP 200 / GraphQL エラーなし。
+- ライブラリ: LibraryHomePage は mySoundtrack のみ 500。user などのデータと再生可能な 108 項目が返る。アプリはこの部分応答を扱う。
+- キュー: CreateRemoteQueue が current / next と操作可否を返す。Prime の曲送り残数とシーク不可の状態を確認。
+- 曲名: NativeTrackMetadata で曲名とアーティストを取得できる。
+- 音源: 独自 musicAgent で getDashManifestsV2 が SUCCESS と Widevine 保護済み DASH マニフェストを返す。
+- 再生停止通知: RemoteQueue への STOPPED が SUCCESS。PAUSED はこの API では拒否されるため、キュー通知とストリーミング通知で区別する。
+
+これらは Android 端末の認証・音声出力・復号の成功を証明するものではない。
+
+## 未確認
+
+- Android 上の新規ログインと Cookie での API 認証
+- 30 秒を超える Android Widevine 復号再生
+- Android CDM と Amazon による永続オフラインライセンスの発行
+- 保存後の機内モード再生と有効期限切れの実機挙動
+
+## ビルド・テスト
+
+- testDebugUnitTest: 8 件成功 (URL 判定 3 件、音楽一覧解析 2 件、オフラインライセンス境界 3 件)。
+- lintDebug: エラー 0。警告は旧版ライブラリ、認証画面の JavaScript、文字列リソースに関するもの。
+- assembleDebug: 成功。開発用署名を検証済み。
+- Android エミュレーターはソフトウェア実行で起動に約 5 分を要し、その後 Android システムが DeadSystemException で再起動した。通常・非ストリーミング方式の両方でインストールを試したが package / activity サービスが終了するため完了せず、アプリの画面起動は未確認。作業用エミュレーターは終了した。
+- 以上はライセンスサーバーから永続ライセンスが発行されることを保証しない。
+
+# 0.2.1 実機検証（2026-10-26）
+
+端末: adb.exe 経由の Pixel 10 Pro。ユーザー自身がアプリにログインしたセッションを使用。ブラウザや PC の認証情報を端末へコピーしていない。
+
+- 修正前: 再生画面に 0:29 でのエラーを確認。別曲では 1 分以上進むことも確認し、曲ごとの違いを調査。
+- 端末ログ: ライセンス取得 HTTP 400 / ForbiddenException。マニフェストの音源自動置換で、Prime では権限のない Unlimited 向けのマスターが選ばれていた。
+- 修正前の個別診断: 「いらない」の B0GL3YDMM8 / B0HDN44YZJ は両方ともライセンス要求を拒否された。
+- 修正後の同一端末での診断: 上記両 ASIN のチャレンジ、ライセンス受信、Android CDM への登録が成功。音源の復号鍵は取得・出力していない。
+- 通常の UI から検索・再生: ライセンス受信と DRM keys loaded を確認。「きらり」の再生位置 101727ms、player state=READY、playing=true、error=none、buffered=160000ms を確認。シークでの移動は行っていない。
+- 11 件のユニットテストが成功。Prime / Unlimited / 未知の tier の音源置換ポリシーに関する 3 件を追加。Lint エラー 0、APK ビルド成功。
+
+この検証はオフライン用永続ライセンス・ダウンロード成功を示すものではない。今回の対象はオンライン再生の 30 秒停止問題。
+
+# 0.3.0: 検索とメディア操作の検証
+
+- ユニットテスト: 15 件成功。異なる種類が混在する検索結果の分類と順序維持、空のカテゴリ、画像サイズ選択、アルバム画像へのフォールバックを追加。
+- ビルド: assembleDebug / assembleDebugAndroidTest 成功。Lint エラー 0。
+- Pixel 10 Pro の Android Instrumentation: 実際の Android framework MediaController と Media3 MediaController を接続し、1 曲分のソースしか持たないプレイヤーで play / next 操作が公開されること、Android 側の skipToNext から処理が一度だけ呼ばれること、次の曲のタイトル・mediaId・artworkUri が届くこと、操作可否の変更が反映されることを確認。テストでは Amazon 再生や実アカウントの権限を使用しない。
+- 実際の検索 UI: 「Porter」で楽曲 30 件 / アルバム 10 件 / プレイリスト 10 件が切り替わり、選択タブ表示とジャケットを確認。ライブラリでも画像表示を確認。
+- 実際の楽曲再生: 「Everything Goes On」から Android メディアキーで「Goodbye To A World」へ移動。アプリ内部状態と Android MediaSession のタイトル・曲 ID が更新され、playing=true / error=none を確認。
+- Android SystemUI のメディアカード: 「Goodbye To A World」、アーティスト、AM Client の表示と、enabled=true の一時停止・次のトラックボタンを確認。previous が許可されない再生モードでは previous を表示しない。
+
+検証対象は検索表示、MediaSession の操作とメタデータ反映。オフラインライセンス取得の対応状況は変更していない。
+
+通知カードの「次のトラック」を実際にタップし、「Goodbye To A World」から「パーティクル・アーツ」へ移動。通知の曲名とアーティスト、アプリの内部状態が一致し、playing=true / error=none を確認。そのカードの「一時停止」も実際にタップして停止を確認した。検証用 Instrumentation APK は削除済み。最終配布 APK と端末のインストール済み APK の SHA-256 一致を確認。
+
+# 0.4.0: シャッフル / リピート
+
+- `testDebugUnitTest`: 21件成功。キューと現在の曲の独立した操作権限、欠落した権限の扱い、利用可能なリピートモードだけを循環すること、API のモード値を追加検証。
+- `lintDebug`: エラー0。`assembleDebug` / `assembleDebugAndroidTest` と APK 署名の検証が成功。
+- Pixel 10 Pro の Instrumentation: Media3 Controller からのシャッフル / リピート変更がサーバー操作用のコールバックに届き、確定前のモードをプレイヤーが公開しないこと、成功後の状態反映、対象外のキューで操作が消えることを追加確認。本体の単一ソース ExoPlayer に全曲リピートやシャッフルが設定されないことも確認。従来の曲送りとメタデータ更新の検証も通過。
+- 実アカウントの再生: Web の「曲を選んで再生」に対応する All-Access プレイリスト「REDISCOVER Porter Robinson」を使用。再生開始は `Goodbye To A World`。3項目の操作権限が true。
+- 1曲リピート: 曲末へシークし、`Look at the Sky` が再び先頭の14msから再生され、playing=true / error=none を確認。
+- 1曲リピート中の手動曲送り: `Goodbye To A World` → `Look at the Sky` に移り、LOOP_ONE を維持した。自然終了での再生継続も確認。
+- 全曲リピート: 先頭から前へ移動してサーバーが返す末尾の `Lifelike` を再生。その曲末へシークして、先頭の `Goodbye To A World` の14msへ戻り、LOOP_ALL / playing=true / error=none を確認。
+- シャッフル: ON にすると先頭の次が通常の `Look at the Sky` ではなく `The Edge Of Glory (Porter Robinson Remix)` となった。OFF にすると、次へでカタログの元の曲順に一致する `Sea Of Voices` に進んだ。
+- リピートOFF: `Lifelike` の末尾で state=ENDED / playing=false / error=none。おすすめ曲へ進まず、「全曲の再生が終了しました」と next=false を確認。
+- 末尾停止後の「再生」でも現在の曲の先頭から再開できるよう修正し、実機で再生位置13ms / playing=true を確認。
+- 対象外のアルバム: `Worlds` からサーバー選曲された再生では、shuffle / loopAll / loopOne はすべて false。画面でも両ボタンが無効となった。
+
+この Prime アカウントでの実再生の検証対象は All-Access プレイリスト。曲を選べるアルバムでも同じサーバー権限とキュー操作を使用する。アルバム全体のオンデマンド再生を実アカウントで別途確認したという意味ではない。オフラインライセンスと保存機能は今回の変更対象外。
+
+0.4.0 (versionCode 5) を `adb.exe install -r` でインストール。最終 APK の SHA-256 が端末の base.apk と一致することを確認。検証用テスト APK は削除済み。
+
+最終 APK でも末尾停止後の「再生」を再確認し、13ms / playing=true と「ストリーミング」の表示を確認。確認終了時は `Lifelike` を一時停止し、全曲リピートON / シャッフルOFF の画面を開いた状態にした。
+
+# 0.4.1: 検索結果の「曲を選んで再生」表示
+
+- 検索結果の Album / Playlist で、`playParams.selections` に `PLAY` がある場合だけ、右側の再生ボタンの上にラベルを表示。楽曲タブ、対象外の項目、ライブラリ、保存済み一覧では非表示。行の再利用時も表示と幅を更新する。
+- Pixel 10 Pro で「Porter」を検索。「REDISCOVER Porter Robinson」の右側にラベルが表示され、隣の非対応プレイリストには出ないことを確認。画面の収まりをスクリーンショットでも確認。
+- 同じ検索のアルバムタブで対象外の「Worlds」などにラベルが出ないこと、楽曲タブにも出ないこと、プレイリストに戻すと対象行にラベルが復帰することを確認。
+- 既存のユニットテスト21件成功、Lintエラー0、APKビルドと署名検証に成功。表示変更のため新しいテストコードは追加していない。
+- 0.4.1 (versionCode 6) を `adb.exe install -r` でインストール。端末と `dist/am-client-debug.apk` の SHA-256 一致を確認。プレイリスト検索結果を開いた状態にした。
+
+# 0.4.2: 表示位置の修正
+
+「曲を選んで再生」を、タイトル下の補足テキストのすぐ右側へ移動。Pixel 10 Pro の検索結果で「REDISCOVER Porter Robinson」の直下が「プレイリスト　曲を選んで再生」と同じ行になり、追加テキストだけ色が変わることを XML とスクリーンショットで確認。非対応の隣接項目は「プレイリスト」のみを表示。
+
+既存テスト21件成功、Lintエラー0、APK署名検証成功。0.4.2 (versionCode 7) を端末へインストールし、配布 APK と端末の APK の SHA-256 一致を確認。
+
+# 0.5.0: アルバムの曲一覧とアーティストページ
+
+追加候補についてユーザーから「今回は指定分だけ」と回答を受け、トップソング、フォロー、共有などは追加しなかった。その後の指定に従い、実際の再生キューは実装対象から外してアルバムの曲一覧とした。検索のアーティストタブは追加指定として実装した。
+
+- ユニットテスト26件成功。アーティストIDとアルバムの保持、共同アーティストを検索結果に混入させないこと、プレイリストedgeの操作権限・コンテナーを優先すること、ページトークンの2種類の形式、ページ境界の重複排除、欠落したノードの扱いを確認。
+- Lintエラー0、assembleDebug / assembleDebugAndroidTest 成功、APK署名検証成功。
+- 最終APKをインストールした Pixel 10 Pro で PlaybackVerification を実行。曲送り、メタデータ、操作可否、シャッフル・リピートの連携に関する既存の実機テストが通過。検証用テストAPKは削除。
+- 検索: 「Porter」のアーティストタブに14件を表示。Porter Robinson の項目からページを開けた。
+- アーティストページ: アルバム20件を表示し、「さらに表示」で34件に増加。関連プレイリストは11件。
+- 関連プレイリストの「REDISCOVER Porter Robinson」を開くと42曲の一覧を表示。edgeから返る PLAY の操作で Goodbye To A World (B075HFQCJW) を再生し、playing=true / error=none を確認。
+- 再生中の曲を開くと「Worlds」12曲の一覧を表示し、Goodbye To A World を強調表示して見える位置へ移動。アーティスト名から Porter Robinson のページへ移動できた。
+- ランダム再生: アーティストのSHUFFLE操作で再生とDRMライセンス受信が成功。このPrimeアカウントでは Ninajirachi の girl EDM など関連アーティストの曲も選曲された。公式Webの要求と同じオプションでも同様に別アーティストの曲を含むことを追加確認。
+- 曲の変更後、表示中のアルバムが girl EDM (disc 1) の10曲へ切り替わり、Ninajirachi のリンクと現在の曲の強調表示も更新された。MainActivityの再生中タイトルからも同じアルバム一覧を開けた。
+- 最終APKで「Easier to Love You (Vertile Remix)」のアルバムを開くと1曲と、Porter Robinson / Vertile の両方へのリンクを表示。Vertile のリンクから本人のページとアルバム一覧を開けた。
+
+0.5.0 (versionCode 8) を adb.exe 経由で端末へインストール。端末のAPKと `dist/am-client-debug.apk` の SHA-256 一致を確認。今回もPCの認証情報をAPKへ入れる処理はない。
+
+最終APKでもプレイリストから Goodbye To A World を再生し、ホームの再生中タイトルから Worlds 12曲の一覧を開く一連の操作を再確認。現在の曲が表示される位置へ移動し、Porter Robinson のリンクも表示された。確認後はこの曲を一時停止した状態で画面を開いたままにした。
+
+# 0.5.1: 検索結果から曲一覧を開く
+
+検索結果の Album / Playlist の行と右側ボタンを、共通の BrowseActivity.collection へ接続。「再生」を「開く」に変更し、アーティストページから開いた場合と同じ画面にした。
+
+- Pixel 10 Pro で「Porter」を検索。アルバムタブの Worlds の行をタップし、12曲の一覧を表示。
+- プレイリストタブの REDISCOVER Porter Robinson の「開く」ボタンから、42曲の一覧を表示。
+- どちらの画面を開いた後も PlaybackService は playing=false / mediaId空欄で、一覧を開くだけでは再生を開始しないことを確認。
+- 既存テスト26件成功、Lintエラー0、ビルドと署名検証に成功。0.5.1 (versionCode 9) をインストールし、端末と配布APKの SHA-256 一致を確認。確認後はプレイリストの曲一覧を開いた状態にした。
+
+# 0.5.2: 再生元で表示先を切り替える
+
+PlaybackService が再生を開始したコレクションの種類とIDを保持するよう変更。全曲再生と一覧からの曲選択の両方で保持し、曲送りでは引き継ぐ。再生中の曲を開く画面は、その情報で Album / Playlist を分岐する。再生元がない曲単体やアーティスト再生では、その曲のアルバムにフォールバックする。
+
+- ユニットテスト30件成功。プレイリストと曲自身のアルバムが異なる場合、Amazonの選曲で別アルバムの曲が返る場合、同じ曲を異なるプレイリストから再生する場合、再生元がない場合の分岐を追加確認。
+- Lintエラー0、ビルド・APK署名検証に成功。実機の既存PlaybackVerificationも通過し、検証用テストAPKは削除。
+- Pixel 10 Pro で REDISCOVER Porter Robinson の曲一覧から Goodbye To A World を再生。再生中の曲をタップすると「プレイリストの曲一覧」、REDISCOVER Porter Robinson、42曲を表示。曲の所属アルバム Worlds へは移動しないことを確認。
+- 同画面で「次へ」を操作し、Look at the Sky に切り替わっても同じプレイリスト42曲を維持。再生中タイトルと強調表示も更新。
+- 検索結果から Worlds のアルバム一覧を開き、全体のシャッフル再生を実行。再生元は Album:B075HG5BZ2。実際にはPrimeの選曲で Infohazard が返ったが、再生中の曲をタップすると「アルバムの曲一覧」、Worlds、12曲を表示し、元のアルバムを維持した。確認後は一時停止。
+- Now画面でもプレイリストの追加ページを取得できるよう、ページカーソルを引き継ぐ。取得中に曲や再生元が変わった場合は古い一覧を反映しない。同じ曲IDのまま再生元が変わった場合も再読込する。
+
+0.5.2 (versionCode 10) を端末へインストールし、端末と `dist/am-client-debug.apk` の SHA-256 一致を確認。
+
+# 0.6.0: ダウンロード原因調査とライブラリの分類
+
+録音方式を追加するか確認し、ユーザーから「今回は原因調査とライブラリ改善まで」と回答を受けた。録音は追加していない。
+
+- ユニットテスト35件成功。ネストした保存用ライセンス拒否の識別、通信障害との区別、自作・フォロー中プレイリストの重複排除、フォロー解除済み項目の除外、2接続の独立したページカーソルと完了した接続を再取得しないことを追加検証。
+- lintDebug エラー0、assembleDebug / assembleDebugAndroidTest / APK署名検証成功。Pixel 10 Pro で既存の PlaybackVerification（MediaController の曲送り、メタデータ・ジャケット、操作権限、サーバーのモード確定、単一音源プレイヤーのリピート分離）が通過。検証用APKは削除した。
+- ライブラリの3タブを実機で確認。楽曲50件、アルバム50件。「さらに表示」でどちらも99件になった。ページをまたぐ同一IDの項目は重複排除される。プレイリストは自作・フォロー中をまとめた35件で、My いいねを含む。
+- アルバム True Colors から13曲の一覧、My いいねから65曲の一覧を開けた。コレクションを開くだけでは再生を開始しない。
+- 最終APKでライブラリのプレイリスト35件、画像、選択タブ、曲を選んで再生の表示位置をXMLとスクリーンショットで確認。検索は従来どおり4タブを表示。
+- 最終APKで REDISCOVER Porter Robinson から Goodbye To A World (B075HFQCJW) を再生。ストリーミング用ライセンス受信と DRM keys loaded、READY / error=none を確認して一時停止。同じ曲を保存すると getLicenseForPlaybackV2 が HTTP 400 / BadRequestException EC_INVALID_PARAMETER で拒否した。
+- 保存用ライセンスの要求は1回で終了（オンライン再生分を含む全要求は2回）。AMDownload の phase=license / rejected=true を確認。画面に「Amazon が保存用ライセンスの発行を拒否しました…」が即時表示され、download preferences の active=false、保存サービスが終了、完成済み保存0件となった。「ダウンロード」タブでも0件と理由を確認。
+
+現在の接続で保存用ライセンスが取得できることは確認できていない。今回の修正は拒否原因の識別・無意味な自動再試行の停止・状態表示と後片付けの改善であり、オフライン保存と再生の成功を意味しない。
+
+0.6.0 (versionCode 11) を adb.exe install -r でインストール。最終配布APKと端末 base.apk の SHA-256 一致、SHA256SUMS を確認。終了時はライブラリのプレイリストタブを表示し、Goodbye To A World は一時停止状態。
+
+# 0.7.0: アルバム・プレイリストから配信音源を保存
+
+ユーザーは録音の依頼後、再生音キャプチャではなく配信データの保存を指定し、「再生時の通信が必要でもよい」と回答。さらに保存ボタンをアルバム・プレイリストのページへ移し、メイン画面の曲の下から削除するよう指定した。音声キャプチャやマイク・画面共有の権限は追加していない。
+
+- ユニットテスト40件成功、lintDebug エラー0、assembleDebug / assembleDebugAndroidTest / APK署名検証成功。保存項目の種類と再生元保持、永続キーを保存しないこと、現在のサーバー権限に基づく再生項目の選択、キャッシュのアカウント・曲ごとの分離、既存音源の再取得なしで選曲可能な再生元へ更新することを追加検証。
+- Pixel 10 Pro の既存 PlaybackVerification が通過。曲送り、メタデータ・ジャケット、操作権限、シャッフル・リピートの連携、単一ソースのリピート分離を確認。検証用テストAPKは削除した。
+- アルバム Worlds のページでダウンロードを開始。10/12曲まで完了した時点で中止し、完成済み10曲が残った。再試行で12/12曲を保存。再生は開始しない。
+- プレイリスト REDISCOVER Porter Robinson のページから全曲保存。42曲中41曲を保存。残り1曲 Less Go! (Porter Robinson Remix) / B06Y65FL7R は、同じ公式APIが PREVIEW のみを返していたことを Chrome DevTools MCP でも確認し、再生不可として区別した。保存可能な41曲にダウンロードエラーはない。
+- 2つの一覧を合わせ、重複を除いた47曲、メタデータ合計87,450,189 bytesを保存。保存項目の keySet フィールドは0件。Goodbye To A World はアルバム由来で保存された音声を再利用しつつ、選曲可能なプレイリストの再生元情報へ更新された。
+- 通常のプレイリストページから Goodbye To A World を再生すると savedAudio=true。通常のライセンス要求と受信、DRM keys loaded を確認。40,508msまで自然に再生し、playing=true / READY / error=none。メディアHTTPバイト数は開始時と同じ69,602,644のままで、音声データのネットワーク取得は0 bytesだった。認証・画像・ライセンス・状態送信の通信を含めたネットワーク量が0という意味ではない。
+- 保存済み行を長押しし、今回保存した1曲を削除。保存件数が47から46へ減少。他の保存項目を維持し、元のプレイリストから再試行して、削除した1曲だけ（メディアHTTP 1,597,863 bytes）を取得した。最終表示は41/42曲・再生不可1曲。
+
+- 最終APKを新しいプロセスで起動し、ダウンロード一覧の Goodbye To A World を選択。保存されたプレイリスト文脈で正規キューを作成し、savedAudio=true / READY / error=none / mediaNetworkBytes=0 で再生できた。
+
+0.7.0 (versionCode 12) を adb.exe 経由でインストール。最終APKの署名とSHA256SUMS、端末 base.apk と配布APKのSHA-256一致を確認した。
+
+最終APKでダウンロード一覧から再生した後、「次へ」で Look at the Sky (B092H3WNWK) へ移動。READY / playing=true / savedAudio=true / error=none / mediaNetworkBytes=0 を確認して一時停止した。メイン画面に「再生中の曲をダウンロード」が存在しないことをXMLでも確認。終了時は再生元のプレイリスト42曲とダウンロードボタン、保存結果を表示している。
+
+# 0.7.1: 表記の整理とダウンロード内のコレクション一覧
+
+- ユニットテスト45件成功。既存保存データからのアルバム・プレイリスト復元、同じ曲を共有する複数の保存元の保持、保存曲をすべて削除した一覧の非表示、ページ追加・メタデータ更新時の所属保持、正式なタイトル・画像・操作権限の優先を追加検証。
+- lintDebug エラー0、assembleDebug とAPK署名検証成功。0.7.1 (versionCode 13) を adb.exe install -r で Pixel 10 Pro へインストールし、端末と配布APKの SHA-256 一致と SHA256SUMS を確認。
+- 既存47曲を残したまま、ダウンロード内の「楽曲・アルバム・プレイリスト」3タブを表示。楽曲47件、アルバム Worlds 1件、プレイリスト REDISCOVER Porter Robinson 1件を確認。
+- アルバムの「開く」から Worlds 12曲、プレイリストの行から REDISCOVER Porter Robinson 42曲の共通BrowseActivityを開けた。ページを開くだけでは再生しないことを確認。
+- 楽曲一覧と両コレクションのページで、指定された旧文言がUI XMLに含まれないことを確認。旧版の保存結果に含まれる補足も表示時に除去される。該当しないページでは空の保存状態欄を非表示にし、可視状態を周期的に切り替える再レイアウトも防止した。
+- 最終APKで Look at the Sky を保存データから再生。READY / playing=true / savedAudio=true / error=none / mediaNetworkBytes=0、message=保存音源を確認して一時停止。メイン画面の表示も「保存音源」だけになり、削除指定の文言がないことを確認。
+- ダウンロードのプレイリストタブと「開く」ボタン、サムネイル、再生表示をスクリーンショットでも確認。終了時はこのタブを表示し、再生は一時停止状態。
+
+# 0.8.0: バックグラウンド曲送りとウィジェット操作
+
+- 0.7.1のホーム表示中に自然な曲送りを観測して問題を再現。アプリとframework MediaSessionは Still Here に更新済みだったが、SystemUIのAM ClientカードはDivinityのまま。前景サービスが解除され、再開にBFGS denied=trueが記録されていた。
+- ユニットテスト45件成功、lintDebug エラー0、assembleDebug / assembleDebugAndroidTest / APK署名検証成功。
+- 実機InstrumentationのPlaybackVerificationを拡張し通過。従来のメタデータ・曲送り・コマンド可否に加え、通知用MediaControllerと同じ接続ヒントでframework custom actionsを検証した。シャッフル操作、OFF→ALL→ONE→OFF、サーバー確定前に成功を返さないこと、失敗時の状態保持、対象外キューでの非表示と古いコマンドの拒否を確認。
+- 制御可能なSimpleBasePlayerを使用し、実際のframework MediaSessionへ自然終了→取得待ち→次曲READYを公開。途中にSTOPPED / PAUSEDが流れず、BUFFERINGとplayWhenReadyが維持され、次曲のメタデータが届いた。準備中に一時停止すると次曲も停止を維持し、実際のキュー末尾ではSTOPPEDを公開することを確認。
+- Pixel 10 ProでREDISCOVER Porter RobinsonのGoodbye To A Worldを再生し、曲末近くへシークしてホームに移動。アプリ画面を開かずに自然終了を迎え、Look at the Skyへ進んだ。準備中も含め継続してisForeground=trueを確認。SystemUIのカードのheader_titleもLook at the Skyに更新された。READY / playing=true / error=none / savedAudio=true / mediaNetworkBytes=0。
+- 同じSystemUIカードのボタンを実際にタップ。シャッフルOFF→ON→OFF、リピートOFF→全曲→1曲→OFFがサーバーの状態へ反映され、カードの状態名・アイコンも更新された。各操作後はupdating=false、再生継続、error=none。
+- 対象外のWorldsからのシャッフル再生では、サーバーがMomentsを選曲し、shuffle / loopAll / loopOneの権限はすべてfalse。この場合、SystemUIにシャッフル・リピートのボタンがないことを確認した。
+- 0.8.0 (versionCode 14) をadb.exeでインストール。配布APKと端末base.apkのSHA-256一致、SHA256SUMSを確認。検証用テストAPKは削除済み。
+
+確認後はREDISCOVER Porter RobinsonのLook at the Skyを再生し直して一時停止。ホーム側のAM Client再生カードに正しい曲名とシャッフルOFF・リピートOFFのボタンを表示した状態で終了。
+
+
+# 0.9.0: 音質の選択
+
+- JVMユニットテスト50件成功。ピーク帯域が異なる表現の選択、欠ける候補へのフォールバック、品質ランキングと帯域の逆転、設定値の互換性、保存元の更新で音質情報を失わないことを確認。lintDebug エラー0 / 警告19、assembleDebug / assembleDebugAndroidTest成功。
+- 最終APKでPlaybackVerification成功。SDだけからの48 / 192 / 320 kbps選択、品質ランキングの優先、保存した表現の再利用、中断された置き換えで旧データを維持、再生中の旧MPDの保護と参照終了後の掃除、旧版の保存形式との互換性を実際のAndroid MPDパーサーとファイルで確認。既存のMediaController・framework通知・曲送り・シャッフル・リピート・自然終了のテストも通過。
+- Pixel 10 Proの設定画面で「再生音質」「保存音質」が独立して表示され、3つのラジオ項目で変更できることを確認。
+- 旧版で保存したAoi（B07BDGWZC7）を48 kbps、savedAudio=true、音声通信0で再生。停止位置910 msから320 kbpsへ切り替えても位置と一時停止状態を維持。約81秒の暗号化区間で320 kbps再生、そのまま192 kbpsへ切り替えて約91秒から再生継続、さらに48 kbpsへ切り替えて約116秒で保存データの再生へ戻った。各段階で同じ曲ID・プレイリスト・モード、READY、error=noneを確認。実際のFormat.bitrateは53,117 / 197,286 / 325,437 bps。
+- 1曲のCheerleaderシングルから通常のダウンロード操作を行い、320 kbps / 9,593,141 bytesで1/1曲の保存が完了。音質・選択表現・保存先の記録を確認。このシングルは選曲制限により再生時に別曲が選ばれたため、この操作だけで保存再生成功とは扱わない。検証で追加したシングルの保存は削除し、従来の保存曲を残した。
+- 明示的なliveQuality実機テストで、選曲可能なBest of サカナクションのAoiを通常のAPIとCDMで保存・再生。320 kbpsは10,330,863 bytes、192 kbpsは6,237,423 bytes。どちらも再生位置68秒超、音声データの追加通信0、エラーなし。再生設定と異なる保存音質で再生でき、320 kbpsの保存音源を再生中に192 kbpsへ保存し直しても元の再生が継続することを確認。検証後のAoiの保存音質は192 kbps。
+- バックグラウンドでAoi（保存192 kbps）からルーキー（B07BDD7XV9、保存48 kbps）へ自然に曲送り。当時の再生設定LOWに従って次曲を選択し、準備中のtransitioning=trueと前景サービスの継続を観測。READY / playing=true / savedAudio=true / mediaNetworkBytes=0 / error=none。SystemUIのカードも「ルーキー / サカナクション」へ更新され、シャッフル・リピートの操作が表示された。
+
+再生途中の音質変更はシークが許可された再生で確認。許可のない再生では次曲から設定を反映する。希望音質が不足するケースは合成MPDとユニットテストで確認し、全カタログ・全端末の音源での確認とは区別する。
+
+
+0.9.0（versionCode 15）の最終APKをadb.exeでインストールし、署名検証・SHA256SUMS・端末base.apkとのSHA-256一致を確認。最終版で通常のInstrumentationとliveQualityの両方を再確認して成功した。SHA-256: `2fbf4f0f0b7754bfb7c76c32af69a7bc6eb78252ade576f4db435e59e66c91b7`。
+
+終了時はダウンロードの楽曲一覧を表示し、Aoiを192 kbpsの保存音源から再生して一時停止。音声通信0・エラーなしを確認した。再生音質・保存音質は標準192 kbpsで永続化され、設定画面にも両方が表示された。保存曲は検証開始時と同じ128曲。検証用テストAPKは削除済み。
+
+
+# 0.10.0: 履歴と保存プレイリストの再生
+
+- JVMユニットテスト58件成功。履歴の最大50件、古い項目の除外、再生し直した項目の先頭移動、種類とIDでの重複判定、同時刻の順序、遅れた古い書き込みの扱い、不正項目の除外、再生元の選択、再生コマンドを保存しないこと、旧ライブラリの楽曲タブから履歴への移行を確認。
+- Android Instrumentationでアカウント別の履歴分離・永続化・並び順を確認。保存音質と通常再生の指定が異なる場合の音源選択、未保存曲、既存の音質・保存置き換え・メディア通知・シャッフル・リピート・バックグラウンド遷移の検証も成功。lintDebugはエラー0 / 警告20、assembleDebug / assembleDebugAndroidTest成功。
+- 初回起動のライブラリに「履歴・アルバム・プレイリスト」、空の履歴の案内を確認。過去のAmazonの履歴を取り込んだり、未再生の項目を追加したりしていない。
+- liveHistoryの実機テストでアルバム「魚図鑑」、アーティストPorter Robinson、プレイリストBest of サカナクションの再生開始を確認。3種類を記録したあと、各履歴をランダム再生し、重複を増やさず先頭へ移動することを確認。履歴再生時の現在の権限取得も成功。Instrumentation終了によるプロセス終了後も3件を表示した。
+- 通常の履歴画面の「魚図鑑をランダム再生」を実際にタップし、shuffle=true / container=Album / requireSavedAudio=false / エラーなしで開始。Primeの選曲で別アーティストのアカシアが流れたが、履歴は選んだ「魚図鑑」のままで先頭へ移動し、全体は3件を維持した。
+- 修正前にダウンロード→プレイリスト→Best of サカナクション→全曲を再生で再現。夜の踊り子は保存HIGH / 323,352 bpsなのに、再生はMEDIUM / 195,352 bps / savedAudio=false / 音声通信1,454,487 bytesとなった。
+- 修正後の同じUI操作では保存HIGH / savedAudio=true / requireSavedAudio=true / 音声通信0で開始。曲行から怪獣を再生する操作、再生中の曲から開くNOW一覧でいらないを選ぶ操作も、保存HIGH / 音声通信0 / エラーなしとなった。
+- liveDownloadedの実機テストで、通常再生の設定MEDIUMに対し保存HIGHのAoiを曲指定で再生し、暗号化区間の68秒超まで音声通信0で進んだ。再生音質の設定操作でも保存音源の再生を維持した。手動の次曲、全曲再生、ホーム表示中の自然な曲送りも保存音質を使い、テスト全体の追加音声通信は0。既存の保存音源を追加・削除せずに検証した。
+- 保存用の再生から履歴の通常再生へ移るとrequireSavedAudio=falseになり、通常の品質設定に戻ることも実機で確認した。
+
+認証・ライセンス取得・再生状態送信の通信と、音声データの再取得は分けて計測した。未保存曲の判定は合成データで検証し、端末の全カタログを確認したものではない。
+
+
+最終確認で、ライブラリは履歴・アルバム・プレイリスト、検索は楽曲・アルバム・プレイリスト・アーティスト、ダウンロードは楽曲・アルバム・プレイリストのままであることを確認した。プロセスを終了して再起動しても履歴3件は保持され、種類とIDの重複なし・時刻降順を保存内容でも確認。既存の保存曲は128曲のまま、再生設定MEDIUM・保存設定HIGHも保持した。
+
+0.10.0（versionCode 16）の署名検証、SHA256SUMS、端末base.apkと配布APKのSHA-256一致を確認。SHA-256: `84e721f43cd7213de9f1127b976e54f8f7b7c14d5a5b0903ab1da2a09e209f2b`。配布先はdist/am-client-debug.apk。検証用テストAPKは削除した。
+
+終了時はライブラリの履歴を表示し、元のAoiを保存320 kbpsから再生して一時停止。追加音声通信0・エラーなし、保存プレイリストの文脈を維持していることを確認した。
+
+
+# 0.10.1: 通常の全再生導線でも保存音源を優先
+
+- 調査時のGoodbye To A Worldは保存HIGH / 325,236 bps、再生MEDIUM / 197,133 bps、savedAudio=false。通常再生に残った音質一致の条件を確認して撤廃した。
+- ユニットテスト58件成功。lintDebugエラー0 / 警告20、assembleDebug / assembleDebugAndroidTest成功。Android Instrumentationの既存の保存・音質・履歴・MediaController・ウィジェット・曲送りの検証も成功。
+- 保存データの参照用テストをopenIfSavedに合わせて更新し、記録した品質を使うこと、旧版の48 kbpsを利用できること、未保存曲はnullを返すことを確認。保存データの品質一致を調べるmatchesは、ダウンロードの再取得判定にのみ使う。
+- liveSavedPriority実機テストで、再生設定MEDIUMに対して保存HIGHのBest of サカナクションを使った。通常の曲一覧の曲指定、検索・ライブラリ由来の全曲再生、履歴のプレイリストのランダム再生はいずれも保存音源を使用し、追加の音声通信は0。Aoiは68秒超の暗号化区間も確認。
+- 同じ通常キューで、手動の次曲・前曲、ホーム表示中の自然な曲送りも保存音源を使い、追加の音声通信0。requireSavedAudio=falseのままであることを確認した。
+- 通常の導線で保存音源を再生中に再生音質を変更しても、実際の保存音質と再生を維持し、音声の再取得は発生しなかった。
+- 検索APIの楽曲結果からも、Amazonが選んだ曲が保存済みの場合は保存音源を使用し、追加の音声通信0。アルバム内の曲指定・履歴のアルバムのランダム再生・アーティストのランダム再生・履歴のアーティスト再生については、このテストでサーバーが未保存曲を選び、正常にストリーミングした。全導線で選択された実際の曲の保存有無と表示・品質を照合した。アルバムやアーティストの未保存の関連曲まで保存済みと扱わない。
+
+保存データの追加・削除や、通常の再生キューを保存曲だけに置き換える操作は行っていない。通常再生の未保存曲は配信で再生し、ダウンロード一覧の未保存曲は従来どおり理由を表示する。
+
+# 0.11.0: 音量ノーマライズ
+
+- ユニットテスト68件成功（既存58＋追加10）。1 kHzステレオの−23 LUFS基準を48 kHzと44.1 kHzで±0.1 LU以内に測定。20 dB異なる音の補正後の差、基準を6 LU下げたときの出力差、無音とゲート、モノラルとステレオ、左右のバランス、急なピーク、シーク、設定の境界と補正の上限、無効時の透過を検証した。
+- lintDebugはエラー0 / 警告20。assembleDebugとassembleDebugAndroidTest成功。0.11.0（versionCode 18）をadb.exeでPixel 10 Proへ更新インストール。
+- Android Instrumentationで実際の16-bit PCMバッファをNormalizationAudioProcessorへ通し、出力長とステレオ、補正後の音量、EOSとflush、新しい曲での測定切り替え、OFF時のビット単位の透過、音量統計の永続化を確認。保存・音質・履歴・MediaController・ウィジェット・バックグラウンド遷移の既存検証も成功。
+- 明示的なliveNormalizationの実アカウント検証に成功。保存HIGHのAoiを再生し、65秒へシーク後、ホーム画面表示中の暗号化区間でも通常のCDM再生とPCM音量補正を継続。測定スナップショットは1,566,720 frames / −6.4527 LUFS / 補正−13.8078 dB（基準−20 LUFS）。追加の音声通信0 bytes、error=none。
+- 同じ再生の基準を−26 LUFSに変更して実際の補正がさらに小さくなること、次の保存曲で測定対象のIDを切り替えること、Aoiの音量統計を次回用に保存することを確認。未保存の曲を検索して通常の配信再生を行い、そのPCM経路にも補正が適用されることを確認。
+
+再生中の音量変化とピーク制限はテスト信号の出力バッファで検証しており、端末スピーカーの音圧を実測したものではない。初回の補正値は再生した範囲からの推定。曲全体の解析を事前に完了した正確な全曲LUFSやTrue Peakの認証は主張しない。詳細は[音量ノーマライズの実装](normalization.md)。
+
+メイン画面と曲一覧の「設定」から実際のダイアログを操作し、ネイティブのスイッチとスライダーを確認した。OFFではスライダーを無効にし、ONで再び操作できた。−26 LUFSに変更した後、ダウンロード一覧のAoiを選択。前回測定した音量を冒頭から使い、再生開始直後の24,960 frames時点で補正−19.5312 dB、保存HIGH / 音声通信0。再生設定はMEDIUMのまま。曲一覧側のダイアログから再生中に−20 LUFSへ変更しても、同じ曲・再生位置・保存音源を維持し、実際の処理バッファに新しい基準値が反映された。
+
+配布APKの署名とSHA256SUMS、端末のbase.apkとの一致を確認。SHA-256: `d99826881020d5b101d3494b86ec087f75fa9f62948660cdc4c9ead37e429270`。保存曲は開始時と同じ197曲、再生MEDIUM / 保存HIGHを維持。検証用テストAPKは削除した。最終設定はノーマライズON / −20 LUFS。

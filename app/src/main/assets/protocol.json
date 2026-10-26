@@ -1,0 +1,11 @@
+{
+  "publicApiKey": "amzn1.application.4ff5579ca2e3407aba989a1f5dbdaf69",
+  "operations": {
+    "SpecSearchPage": "d98950bb1cbb8c371cd50f9213a700c4bbdae2eeb71825b24f04760c45101d8f",
+    "CreateRemoteQueue": "ce53397897c6a286f02a4da8a869fb8d0033e930c058796a6b2a16543e555512",
+    "LibraryHomePage": "8fbb66318689a88a64e1e0b7699cbcdb5cc63c0836b114557a3f3bf6dcbe17e8",
+    "FetchRemoteQueue": "675571e074e5e245e3f8da7391ba8934d845c633efaf3c6a54ee0df36ac3f445",
+    "ReportDevicePlayback": "8dd79183c8a2d571cbef6d0fdbde867d68b4b50a7b6ee80bbe56d72063d6ca9a",
+    "ReportCurrentDeviceStreaming": "37f3afc3392813c2efd52f00cfc66947cc9f4b47b930c16ed7b34a275cdb6c67"
+  }
+}
