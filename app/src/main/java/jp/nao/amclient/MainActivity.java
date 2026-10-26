@@ -26,14 +26,14 @@ public class MainActivity extends Activity {
     private final Map<LibraryCategory,CatalogPage> libraryPages=new EnumMap<>(LibraryCategory.class);
     private final Map<LibraryCategory,Button> libraryButtons=new EnumMap<>(LibraryCategory.class);
     private PlaybackService playback;
-    private TextView state,now,position,empty,downloadStatus;
-    private ImageView cover;
+    private TextView state,empty,downloadStatus,heading;
     private EditText input;
-    private LinearLayout categories,libraryCategories;
+    private LinearLayout categories,libraryCategories,searchBar;
     private CatalogAdapter adapter;
-    private SeekBar seek;
-    private Button toggle,next,previous,shuffle,repeat,more;
-    private boolean downloads,bound,searchMode,loading,showDownloadStatus;
+    private Button more;
+    private MiniPlayerView miniPlayer;
+    private BottomNavigationView navigation;
+    private boolean downloads,bound,searchMode,loading,showDownloadStatus,searchLoaded;
     private SearchCategory category=SearchCategory.TRACKS;
     private LibraryCategory libraryCategory=LibraryCategory.HISTORY;
     private SearchCategory searchCategory=SearchCategory.TRACKS,downloadCategory=SearchCategory.TRACKS;
@@ -45,18 +45,17 @@ public class MainActivity extends Activity {
     };
     private final BroadcastReceiver historyReceiver=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){if(showingHistory())renderHistory();}};
     private final ServiceConnection connection=new ServiceConnection(){
-        public void onServiceConnected(ComponentName name,IBinder binder){playback=((PlaybackService.LocalBinder)binder).service();}
-        public void onServiceDisconnected(ComponentName name){playback=null;}
+        public void onServiceConnected(ComponentName name,IBinder binder){playback=((PlaybackService.LocalBinder)binder).service();miniPlayer.update(playback);}
+        public void onServiceDisconnected(ComponentName name){playback=null;miniPlayer.update(null);}
     };
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
         LinearLayout root=column();root.setBackgroundColor(BG);
         root.setOnApplyWindowInsetsListener((v,insets)->{v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets.consumeSystemWindowInsets();});
-        LinearLayout top=row();TextView brand=text(getString(R.string.brand),24,ACCENT);brand.setPadding(dp(16),dp(16),0,dp(12));top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));top.addView(button("設定",()->QualitySettings.show(this,playback)));top.addView(button("アカウント",this::account));root.addView(top);
-        LinearLayout search=row();search.setPadding(dp(12),0,dp(4),0);input=new EditText(this);input.setSingleLine(true);input.setTextColor(Color.WHITE);input.setHintTextColor(Color.GRAY);input.setHint("曲名・アーティストを検索");input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
-        search.addView(input,new LinearLayout.LayoutParams(0,-2,1));search.addView(button("検索",()->search(input.getText().toString())));root.addView(search);
+        LinearLayout top=row();heading=text("ライブラリ",24,Color.WHITE);heading.setPadding(dp(16),dp(12),0,dp(12));top.addView(heading,new LinearLayout.LayoutParams(0,-2,1));top.addView(PlayerViews.iconButton(this,PlayerViews.Icon.SETTINGS,"再生設定",()->QualitySettings.show(this,playback)),new LinearLayout.LayoutParams(dp(48),dp(48)));top.addView(button("アカウント",this::account));root.addView(top);
+        searchBar=row();searchBar.setPadding(dp(12),0,dp(8),dp(4));input=new EditText(this);input.setSingleLine(true);input.setTextColor(Color.WHITE);input.setHintTextColor(PlayerViews.MUTED);input.setTextSize(16);input.setHint("曲・アルバム・アーティストを検索");input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        searchBar.addView(input,new LinearLayout.LayoutParams(0,dp(52),1));searchBar.addView(PlayerViews.iconButton(this,PlayerViews.Icon.SEARCH,"検索する",()->search(input.getText().toString())),new LinearLayout.LayoutParams(dp(48),dp(48)));root.addView(searchBar);
         input.setOnEditorActionListener((v,a,e)->{if(a==EditorInfo.IME_ACTION_SEARCH){search(input.getText().toString());return true;}return false;});
-        LinearLayout tabs=row();tabs.addView(tab("ライブラリ",this::library));tabs.addView(tab("ダウンロード",this::downloadList));root.addView(tabs);
         categories=row();for(SearchCategory value:SearchCategory.values()){
             Button button=tab(value.label,()->{category=value;showDownloadStatus=false;refreshDownloadStatus();if(downloads){downloadCategory=value;renderDownloads();}else if(searchMode){searchCategory=value;updateTabs();if(!loading)renderSearch();}});button.setPadding(dp(4),0,dp(4),0);categoryButtons.put(value,button);categories.addView(button);
         }root.addView(categories);categories.setVisibility(View.GONE);
@@ -68,21 +67,11 @@ public class MainActivity extends Activity {
         empty=text("",16,Color.LTGRAY);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(24),dp(20),dp(24),dp(20));content.addView(empty,new FrameLayout.LayoutParams(-1,-1));results.setEmptyView(empty);
         root.addView(content,new LinearLayout.LayoutParams(-1,0,1));
         more=button("さらに表示",()->loadLibrary(true));root.addView(more);more.setVisibility(View.GONE);
-        LinearLayout player=column();player.setPadding(dp(16),dp(12),dp(16),dp(8));player.setBackgroundColor(0xff1d292e);
-        LinearLayout track=row();cover=artwork(48);track.addView(cover,new LinearLayout.LayoutParams(dp(48),dp(48)));
-        now=text("曲を選んでください",17,Color.WHITE);now.setMaxLines(2);now.setEllipsize(TextUtils.TruncateAt.END);now.setPadding(dp(12),0,0,0);track.addView(now,new LinearLayout.LayoutParams(0,-2,1));player.addView(track);
-        track.setOnClickListener(v->{if(playback!=null&&!playback.contentId.isEmpty())BrowseActivity.now(this);});track.setContentDescription("再生元の曲一覧を開く");
-        position=text("0:00 / 0:00",12,Color.LTGRAY);position.setMaxLines(2);player.addView(position);seek=new SeekBar(this);player.addView(seek);
-        seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar b,int p,boolean user){}public void onStartTrackingTouch(SeekBar b){}public void onStopTrackingTouch(SeekBar b){if(playback!=null)playback.seek(b.getProgress());}});
-        LinearLayout controls=row();previous=tab("前へ",()->{if(playback!=null)playback.next(true);});toggle=tab("再生",()->{if(playback!=null)playback.togglePlayback();});next=tab("次へ",()->{if(playback!=null)playback.next(false);});
-        controls.addView(previous);controls.addView(toggle);controls.addView(next);player.addView(controls);
-        LinearLayout modes=row();shuffle=tab("シャッフル: OFF",()->{if(playback!=null)playback.setShuffle(!playback.shuffleEnabled);});
-        repeat=tab("リピート: OFF",()->{if(playback!=null)playback.setRepeat(playback.modes.next(playback.repeatMode));});modes.addView(shuffle);modes.addView(repeat);player.addView(modes);
-        root.addView(player);setContentView(root);
+        miniPlayer=new MiniPlayerView(this);root.addView(miniPlayer,new LinearLayout.LayoutParams(-1,-2));
+        navigation=new BottomNavigationView(this,BottomNavigationView.Section.LIBRARY,this::selectSection);root.addView(navigation);setContentView(root);
         bound=bindService(new Intent(this,PlaybackService.class).setAction("local"),connection,BIND_AUTO_CREATE);
-        main.post(tick);
         if(saved!=null){input.setText(saved.getString("input",""));libraryCategory=LibraryCategory.restore(saved.getString("libraryCategory","HISTORY"));try{searchCategory=SearchCategory.valueOf(saved.getString("searchCategory","TRACKS"));downloadCategory=SearchCategory.valueOf(saved.getString("downloadCategory","TRACKS"));if(downloadCategory==SearchCategory.ARTISTS)downloadCategory=SearchCategory.TRACKS;}catch(IllegalArgumentException ignored){} }
-        if(getIntent().getBooleanExtra("showDownloads",false))downloadList();else if(saved!=null&&saved.getBoolean("search"))search(saved.getString("query",""));else if(saved!=null&&saved.getBoolean("downloads"))downloadList();else library();
+        if(getIntent().getBooleanExtra("showDownloads",false))downloadList();else if(getIntent().hasExtra("destination"))selectSection(BottomNavigationView.Section.parse(getIntent().getStringExtra("destination")));else if(saved!=null&&saved.getBoolean("search")){query=saved.getString("query","");openSearch();}else if(saved!=null&&saved.getBoolean("downloads"))downloadList();else library();
     }
     private LinearLayout column(){LinearLayout v=new LinearLayout(this);v.setOrientation(LinearLayout.VERTICAL);return v;}
     private LinearLayout row(){LinearLayout v=new LinearLayout(this);v.setGravity(Gravity.CENTER_VERTICAL);return v;}
@@ -93,7 +82,8 @@ public class MainActivity extends Activity {
     private ImageView artwork(int size){ImageView image=new ImageView(this);image.setScaleType(ImageView.ScaleType.CENTER_CROP);image.setImageResource(R.drawable.ic_music);image.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         GradientDrawable background=new GradientDrawable();background.setColor(0xff28383e);background.setCornerRadius(dp(8));image.setBackground(background);image.setClipToOutline(true);image.setMinimumWidth(dp(size));return image;}
     private boolean showingHistory(){return !downloads&&!searchMode&&libraryCategory==LibraryCategory.HISTORY;}
-    private void updateTabs(){boolean library=!downloads&&!searchMode;categories.setVisibility(library?View.GONE:View.VISIBLE);libraryCategories.setVisibility(library?View.VISIBLE:View.GONE);
+    private void updateTabs(){boolean library=!downloads&&!searchMode;categories.setVisibility(library?View.GONE:View.VISIBLE);libraryCategories.setVisibility(library?View.VISIBLE:View.GONE);searchBar.setVisibility(searchMode?View.VISIBLE:View.GONE);
+        BottomNavigationView.Section section=downloads?BottomNavigationView.Section.DOWNLOADS:searchMode?BottomNavigationView.Section.SEARCH:BottomNavigationView.Section.LIBRARY;getIntent().putExtra("section",section.name());getIntent().removeExtra("destination");navigation.select(section);heading.setText(section.label);
         for(Map.Entry<LibraryCategory,Button> entry:libraryButtons.entrySet()){boolean selected=entry.getKey()==libraryCategory;entry.getValue().setSelected(selected);entry.getValue().setTextColor(selected?ACCENT:Color.LTGRAY);entry.getValue().setBackgroundColor(selected?0xff243c40:Color.TRANSPARENT);}
         for(Map.Entry<SearchCategory,Button> entry:categoryButtons.entrySet()){
         entry.getValue().setVisibility(searchMode||entry.getKey()!=SearchCategory.ARTISTS?View.VISIBLE:View.GONE);
@@ -101,12 +91,15 @@ public class MainActivity extends Activity {
     }}
     private interface Loader{List<MusicEntity> load()throws Exception;}
     private void load(String label,boolean isSearch,Loader loader){downloads=false;searchMode=isSearch;refreshDownloadStatus();loading=true;int token=++requestGeneration;categories.setVisibility(View.VISIBLE);more.setVisibility(View.GONE);updateTabs();state.setText(label+"を読み込んでいます…");empty.setText("");adapter.setEntities(Collections.emptyList());
-        work.execute(()->{try{List<MusicEntity> items=loader.load();main.post(()->{if(isDestroyed()||token!=requestGeneration)return;loading=false;if(isSearch){searchResults=items;renderSearch();}else{state.setText(label+" · "+items.size()+"件");empty.setText("表示できる項目がありません");adapter.setEntities(items);}});}
+        work.execute(()->{try{List<MusicEntity> items=loader.load();main.post(()->{if(isDestroyed()||token!=requestGeneration)return;loading=false;if(isSearch){searchResults=items;searchLoaded=true;renderSearch();}else{state.setText(label+" · "+items.size()+"件");empty.setText("表示できる項目がありません");adapter.setEntities(items);}});}
         catch(Exception issue){main.post(()->{if(token!=requestGeneration||isDestroyed())return;loading=false;state.setText(issue.getMessage());empty.setText("アカウントからログインして、再試行してください。");});}});
     }
-    private void renderSearch(){List<MusicEntity> items=category.filter(searchResults);updateTabs();state.setText("検索結果 · "+category.label+" · "+items.size()+"件");empty.setText("一致する"+category.label+"はありません");adapter.setEntities(items);}
-    private void search(String value){if(value.trim().isEmpty())return;showDownloadStatus=false;refreshDownloadStatus();category=searchCategory;query=value.trim();String requestedQuery=query;searchResults=Collections.emptyList();((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(input.getWindowToken(),0);input.clearFocus();load("検索結果",true,()->AmazonApi.get(this).search(requestedQuery));}
-    private void library(){showDownloadStatus=false;refreshDownloadStatus();libraryPages.clear();loadLibrary(false);}
+    private void renderSearch(){List<MusicEntity> items=category.filter(searchResults);updateTabs();state.setText(query.isEmpty()?"曲・アルバム・プレイリスト・アーティスト": "検索結果 · "+category.label+" · "+items.size()+"件");empty.setText(query.isEmpty()?"曲名・アルバム名・アーティスト名を入力して検索できます。":"一致する"+category.label+"はありません");adapter.setEntities(items);}
+    private void hideKeyboard(){((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(input.getWindowToken(),0);input.clearFocus();}
+    private void selectSection(BottomNavigationView.Section section){switch(section){case SEARCH:openSearch();break;case LIBRARY:library();break;case DOWNLOADS:downloadList();break;}}
+    private void openSearch(){if(searchMode)return;downloads=false;searchMode=true;loading=false;++requestGeneration;category=searchCategory;more.setVisibility(View.GONE);showDownloadStatus=false;refreshDownloadStatus();if(!query.isEmpty()&&!searchLoaded)search(query);else renderSearch();}
+    private void search(String value){if(value.trim().isEmpty()){query="";searchLoaded=false;searchResults=Collections.emptyList();downloads=false;searchMode=true;loading=false;++requestGeneration;category=searchCategory;more.setVisibility(View.GONE);hideKeyboard();renderSearch();return;}showDownloadStatus=false;refreshDownloadStatus();category=searchCategory;query=value.trim();String requestedQuery=query;searchLoaded=false;searchResults=Collections.emptyList();hideKeyboard();load("検索結果",true,()->AmazonApi.get(this).search(requestedQuery));}
+    private void library(){hideKeyboard();showDownloadStatus=false;refreshDownloadStatus();loadLibrary(false);}
     private void loadLibrary(boolean append){
         downloads=false;searchMode=false;refreshDownloadStatus();updateTabs();final LibraryCategory requested=libraryCategory;
         final CatalogPage old=libraryPages.get(requested);final int token=++requestGeneration;
@@ -124,7 +117,7 @@ public class MainActivity extends Activity {
     }
     private void renderLibrary(CatalogPage page){state.setText("ライブラリ · "+libraryCategory.label+" · "+page.items.size()+"件");empty.setText("登録済みの"+libraryCategory.label+"はありません");adapter.setEntities(page.items);more.setEnabled(true);more.setVisibility(page.cursor.isEmpty()?View.GONE:View.VISIBLE);}
     private void renderHistory(){List<MusicEntity> items=new HistoryStore(this).list();updateTabs();more.setVisibility(View.GONE);state.setText("ライブラリ · 履歴 · "+items.size()+"件");empty.setText("再生履歴はまだありません。\nアルバム・プレイリスト・アーティストを再生すると、ここに表示されます。");adapter.setHistory(items);}
-    private void downloadList(){getIntent().removeExtra("showDownloads");downloads=true;searchMode=false;category=downloadCategory;loading=false;++requestGeneration;categories.setVisibility(View.VISIBLE);more.setVisibility(View.GONE);renderDownloads();refreshDownloadStatus();}
+    private void downloadList(){hideKeyboard();getIntent().removeExtra("showDownloads");downloads=true;searchMode=false;category=downloadCategory;loading=false;++requestGeneration;categories.setVisibility(View.VISIBLE);more.setVisibility(View.GONE);renderDownloads();refreshDownloadStatus();}
     private void renderDownloads(){
         OfflineStore store=new OfflineStore(this);updateTabs();int count;
         if(category==SearchCategory.TRACKS){List<JSONObject> items=store.list();count=items.size();adapter.setSaved(items);}
@@ -168,23 +161,12 @@ public class MainActivity extends Activity {
         .setItems(new String[]{"ログイン / アカウントを変更","アプリについて"},(d,w)->{if(w==0){if(playback!=null)playback.reset();stopService(new Intent(this,OfflineDownloadService.class));startActivityForResult(new Intent(this,LoginActivity.class),10);}else new AlertDialog.Builder(this).setTitle("AM Client "+BuildConfig.VERSION_NAME)
             .setMessage("検索・一覧・音声再生はネイティブ実装です。ログイン時のみ Amazon の認証画面を使います。\n\nアルバム・プレイリストから暗号化された音声を保存できます。保存音源の再生時も認証・ライセンス取得・再生状態の送信に通信を使います。完全オフラインでは再生できません。")
             .setPositiveButton("閉じる",null).show();}).setNegativeButton("閉じる",null).show();}
-    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(intent.getBooleanExtra("showDownloads",false))downloadList();}
-    @Override protected void onActivityResult(int code,int result,Intent data){super.onActivityResult(code,result,data);if(code==10&&result==RESULT_OK)library();}
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);String section=getIntent().getStringExtra("section");setIntent(intent);getIntent().putExtra("section",section);if(intent.getBooleanExtra("showDownloads",false))downloadList();else if(intent.hasExtra("destination"))selectSection(BottomNavigationView.Section.parse(intent.getStringExtra("destination")));}
+    @Override protected void onActivityResult(int code,int result,Intent data){super.onActivityResult(code,result,data);if(code==10&&result==RESULT_OK){libraryPages.clear();searchResults=Collections.emptyList();searchLoaded=false;query="";input.setText("");library();}}
     private void setTextIfChanged(TextView view,String value){if(!TextUtils.equals(view.getText(),value))view.setText(value);}
-    private void updateModes(){
-        boolean available=!playback.busy&&!playback.modeUpdating;
-        shuffle.setEnabled(available&&playback.modes.shuffle);repeat.setEnabled(available&&(playback.modes.all||playback.modes.one||playback.repeatMode!=androidx.media3.common.Player.REPEAT_MODE_OFF));
-        setTextIfChanged(shuffle,"シャッフル: "+(playback.shuffleEnabled?"ON":"OFF"));
-        String value=playback.repeatMode==androidx.media3.common.Player.REPEAT_MODE_ONE?"1曲":playback.repeatMode==androidx.media3.common.Player.REPEAT_MODE_ALL?("Album".equals(playback.containerType)?"アルバム":"全曲"):"OFF";
-        setTextIfChanged(repeat,"リピート: "+value);
-        shuffle.setSelected(playback.shuffleEnabled);repeat.setSelected(playback.repeatMode!=androidx.media3.common.Player.REPEAT_MODE_OFF);
-        shuffle.setBackgroundColor(shuffle.isSelected()?0xff243c40:Color.TRANSPARENT);repeat.setBackgroundColor(repeat.isSelected()?0xff243c40:Color.TRANSPARENT);
-        shuffle.setAlpha(shuffle.isEnabled()?1f:.4f);repeat.setAlpha(repeat.isEnabled()?1f:.4f);
-    }
-    private final Runnable tick=new Runnable(){public void run(){if(playback!=null){setTextIfChanged(now,playback.title+(playback.artist.isEmpty()?"":"\n"+playback.artist));thumbnails.bind(cover,playback.artworkUrl);setTextIfChanged(toggle,playback.player.isPlaying()?"一時停止":"再生");long duration=Math.max(0,playback.player.getDuration());long current=Math.max(0,playback.player.getCurrentPosition());seek.setMax((int)Math.min(Integer.MAX_VALUE,duration));if(!seek.isPressed())seek.setProgress((int)current);boolean available=!playback.busy&&!playback.modeUpdating;seek.setEnabled(playback.canSeek&&available);next.setEnabled(playback.canNext&&available);previous.setEnabled(playback.canPrevious&&available);updateModes();setTextIfChanged(position,time(current)+" / "+time(duration)+"  ·  "+playback.message+(playback.audioDescription().isEmpty()?"":" · "+playback.audioDescription()));}main.postDelayed(this,500);}};
-    private String time(long millis){long s=millis/1000;return String.format(Locale.ROOT,"%d:%02d",s/60,s%60);}
-    @Override protected void onStart(){super.onStart();androidx.core.content.ContextCompat.registerReceiver(this,downloadReceiver,new IntentFilter(OfflineDownloadService.STATUS),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);androidx.core.content.ContextCompat.registerReceiver(this,historyReceiver,new IntentFilter(HistoryStore.CHANGED),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);OfflineDownloadService.reconcileStatus(this);refreshDownloadStatus();if(downloads)renderDownloads();else if(showingHistory())renderHistory();}
-    @Override protected void onStop(){unregisterReceiver(downloadReceiver);unregisterReceiver(historyReceiver);super.onStop();}
+    private final Runnable tick=new Runnable(){public void run(){miniPlayer.update(playback);main.postDelayed(this,500);}};
+    @Override protected void onStart(){super.onStart();androidx.core.content.ContextCompat.registerReceiver(this,downloadReceiver,new IntentFilter(OfflineDownloadService.STATUS),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);androidx.core.content.ContextCompat.registerReceiver(this,historyReceiver,new IntentFilter(HistoryStore.CHANGED),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);OfflineDownloadService.reconcileStatus(this);refreshDownloadStatus();if(downloads)renderDownloads();else if(showingHistory())renderHistory();main.post(tick);}
+    @Override protected void onStop(){main.removeCallbacks(tick);unregisterReceiver(downloadReceiver);unregisterReceiver(historyReceiver);super.onStop();}
     @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putString("input",input.getText().toString());out.putBoolean("search",searchMode);out.putBoolean("downloads",downloads);out.putString("query",query);out.putString("searchCategory",searchCategory.name());out.putString("libraryCategory",libraryCategory.name());out.putString("downloadCategory",downloadCategory.name());}
-    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);thumbnails.close();if(bound)unbindService(connection);work.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);thumbnails.close();miniPlayer.close();if(bound)unbindService(connection);work.shutdownNow();super.onDestroy();}
 }

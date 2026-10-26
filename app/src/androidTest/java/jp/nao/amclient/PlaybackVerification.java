@@ -23,6 +23,7 @@ public class PlaybackVerification extends Instrumentation {
     private boolean liveDownloaded;
     private boolean liveSavedPriority;
     private boolean liveNormalization;
+    private boolean uiNavigation;
     private ExoPlayer engine;
     private RemoteQueuePlayer transport;
     private MediaSession session;
@@ -34,9 +35,10 @@ public class PlaybackVerification extends Instrumentation {
     private MediaSession automaticSession;
     private MediaController automaticController;
     private android.media.session.MediaController automaticPlatform;
-    @Override public void onCreate(Bundle arguments){super.onCreate(arguments);liveQuality=arguments!=null&&"true".equals(arguments.getString("liveQuality"));liveHistory=arguments!=null&&"true".equals(arguments.getString("liveHistory"));liveDownloaded=arguments!=null&&"true".equals(arguments.getString("liveDownloaded"));liveSavedPriority=arguments!=null&&"true".equals(arguments.getString("liveSavedPriority"));liveNormalization=arguments!=null&&"true".equals(arguments.getString("liveNormalization"));start();}
+    @Override public void onCreate(Bundle arguments){super.onCreate(arguments);uiNavigation=arguments!=null&&"true".equals(arguments.getString("uiNavigation"));liveQuality=arguments!=null&&"true".equals(arguments.getString("liveQuality"));liveHistory=arguments!=null&&"true".equals(arguments.getString("liveHistory"));liveDownloaded=arguments!=null&&"true".equals(arguments.getString("liveDownloaded"));liveSavedPriority=arguments!=null&&"true".equals(arguments.getString("liveSavedPriority"));liveNormalization=arguments!=null&&"true".equals(arguments.getString("liveNormalization"));start();}
     @Override public void onStart(){
         Bundle result=new Bundle();int outcome=Activity.RESULT_CANCELED;
+        if(uiNavigation){try{result.putString("stream","PASS: "+NavigationVerification.run(this)+"\n");outcome=Activity.RESULT_OK;}catch(Throwable failure){result.putString("stream","FAIL: "+failure+"\n");}finish(outcome,result);return;}
         if(liveNormalization){try{result.putString("stream","PASS: "+LiveNormalizationVerification.run(this)+"\n");outcome=Activity.RESULT_OK;}catch(Throwable failure){result.putString("stream","FAIL: "+failure+"\n");}finish(outcome,result);return;}
         if(liveSavedPriority){try{result.putString("stream","PASS: "+LiveSavedPriorityVerification.run(this)+"\n");outcome=Activity.RESULT_OK;}catch(Throwable failure){result.putString("stream","FAIL: "+failure+"\n");}finish(outcome,result);return;}
         if(liveDownloaded){try{result.putString("stream","PASS: "+LiveDownloadedVerification.run(this)+"\n");outcome=Activity.RESULT_OK;}catch(Throwable failure){result.putString("stream","FAIL: "+failure+"\n");}finish(outcome,result);return;}

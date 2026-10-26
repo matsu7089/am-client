@@ -47,6 +47,8 @@ public class PlaybackService extends MediaSessionService {
     private LoudnessStore loudnessStore;
     private final SharedPreferences.OnSharedPreferenceChangeListener normalizationChanged=(prefs,key)->refreshNormalization();
     public boolean requiresSavedAudio(){return savedQueue;}
+    public boolean playbackRequested(){return transport.getPlayWhenReady();}
+    public boolean canTogglePlayback(){return !contentId.isEmpty()&&(!busy||transport.isAutomaticTransition());}
     public String audioDescription(){return currentDash==null?"":currentDash.quality.kbps+" kbps";}
     @Override public void onCreate() {
         super.onCreate();api=AmazonApi.get(this);

@@ -26,23 +26,24 @@ public class BrowseActivity extends Activity {
     private int requestGeneration;
     private MusicEntity owner;
     private List<MusicEntity> items=Collections.emptyList();
-    private TextView heading,name,summary,status,empty,mini,downloadStatus;
+    private TextView heading,name,summary,status,empty,downloadStatus;
     private ImageView image;
     private LinearLayout people,tabs;
-    private Button primary,albums,playlistTab,more,play,previous,next,download;
+    private Button primary,albums,playlistTab,more,download;
+    private MiniPlayerView miniPlayer;
     private MusicEntity pendingDownload;
     private final BroadcastReceiver downloadReceiver=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){updateDownload();}};
     private Rows adapter;
     private ListView list;
     private final ServiceConnection connection=new ServiceConnection(){
-        @Override public void onServiceConnected(ComponentName name,IBinder binder){playback=((PlaybackService.LocalBinder)binder).service();if(NOW.equals(kind))load(false);}
-        @Override public void onServiceDisconnected(ComponentName name){playback=null;}
+        @Override public void onServiceConnected(ComponentName name,IBinder binder){playback=((PlaybackService.LocalBinder)binder).service();miniPlayer.update(playback);if(NOW.equals(kind))load(false);}
+        @Override public void onServiceDisconnected(ComponentName name){playback=null;miniPlayer.update(null);}
     };
-    static void now(Context context){context.startActivity(new Intent(context,BrowseActivity.class).putExtra("kind",NOW));}
+    static void now(Context context){context.startActivity(BottomNavigationView.inherit(context,new Intent(context,BrowseActivity.class).putExtra("kind",NOW)));}
     static void artist(Context context,String id){open(context,ARTIST,id);}
     static void collection(Context context,String type,String id){open(context,type,id);}
-    static void savedCollection(Context context,String type,String id){context.startActivity(new Intent(context,BrowseActivity.class).putExtra("kind",type).putExtra("id",id).putExtra("downloaded",true));}
-    private static void open(Context context,String type,String id){context.startActivity(new Intent(context,BrowseActivity.class).putExtra("kind",type).putExtra("id",id));}
+    static void savedCollection(Context context,String type,String id){context.startActivity(BottomNavigationView.inherit(context,new Intent(context,BrowseActivity.class).putExtra("kind",type).putExtra("id",id).putExtra("downloaded",true)));}
+    private static void open(Context context,String type,String id){context.startActivity(BottomNavigationView.inherit(context,new Intent(context,BrowseActivity.class).putExtra("kind",type).putExtra("id",id)));}
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);kind=getIntent().getStringExtra("kind");id=getIntent().getStringExtra("id");
         if(!NOW.equals(kind)&&!ARTIST.equals(kind)&&!"Album".equals(kind)&&!"Playlist".equals(kind)){finish();return;}
@@ -64,8 +65,7 @@ public class BrowseActivity extends Activity {
         FrameLayout body=new FrameLayout(this);list=new ListView(this);list.setDivider(new android.graphics.drawable.ColorDrawable(0xff26343b));list.setDividerHeight(dp(1));list.setCacheColorHint(BG);adapter=new Rows();list.setAdapter(adapter);body.addView(list,new FrameLayout.LayoutParams(-1,-1));
         empty=text("",15,Color.LTGRAY);empty.setGravity(Gravity.CENTER);empty.setPadding(dp(24),dp(24),dp(24),dp(24));body.addView(empty,new FrameLayout.LayoutParams(-1,-1));list.setEmptyView(empty);root.addView(body,new LinearLayout.LayoutParams(-1,0,1));
         more=button("さらに表示",()->load(true));more.setVisibility(View.GONE);root.addView(more,new LinearLayout.LayoutParams(-1,dp(48)));
-        LinearLayout footer=column();footer.setPadding(dp(12),dp(8),dp(12),dp(4));footer.setBackgroundColor(0xff1d292e);mini=text("曲を選んでください",14,Color.WHITE);mini.setMaxLines(2);mini.setEllipsize(TextUtils.TruncateAt.END);mini.setPadding(dp(4),dp(4),dp(4),dp(4));mini.setMinHeight(dp(48));mini.setGravity(Gravity.CENTER_VERTICAL);mini.setOnClickListener(v->{if(playback!=null&&!playback.contentId.isEmpty()&&!NOW.equals(kind))now(this);});footer.addView(mini);
-        LinearLayout controls=row();previous=tab("前へ",()->{if(playback!=null)playback.next(true);});play=tab("再生",()->{if(playback!=null)playback.togglePlayback();});next=tab("次へ",()->{if(playback!=null)playback.next(false);});controls.addView(previous);controls.addView(play);controls.addView(next);footer.addView(controls);root.addView(footer);setContentView(root);
+        miniPlayer=new MiniPlayerView(this);root.addView(miniPlayer,new LinearLayout.LayoutParams(-1,-2));root.addView(new BottomNavigationView(this,BottomNavigationView.section(this),section->BottomNavigationView.open(this,section)));setContentView(root);
         bound=bindService(new Intent(this,PlaybackService.class).setAction("local"),connection,BIND_AUTO_CREATE);
         if(!NOW.equals(kind))load(false);
     }
@@ -157,12 +157,10 @@ public class BrowseActivity extends Activity {
     private final Runnable tick=new Runnable(){@Override public void run(){
         updateDownload();
         if(playback!=null){
-            setText(mini,playback.title+(playback.artist.isEmpty()?"":"\n"+playback.artist));setText(play,playback.player.isPlaying()?"一時停止":"再生");
-            boolean available=!playback.busy&&!playback.modeUpdating;previous.setEnabled(available&&playback.canPrevious);next.setEnabled(available&&playback.canNext);play.setEnabled(!playback.contentId.isEmpty());
             if(!highlight.equals(playback.contentId)){highlight=playback.contentId;adapter.notifyDataSetChanged();}
             if(NOW.equals(kind)&&!loading&&!playback.busy&&(!playback.contentId.equals(seenTrack)||playback.origin!=seenOrigin))load(false);
         }
-        main.postDelayed(this,500);
+        miniPlayer.update(playback);main.postDelayed(this,500);
     }};
     private void setText(TextView v,String text){if(!TextUtils.equals(v.getText(),text))v.setText(text);}
     private LinearLayout column(){LinearLayout v=new LinearLayout(this);v.setOrientation(LinearLayout.VERTICAL);return v;}
@@ -176,5 +174,5 @@ public class BrowseActivity extends Activity {
     @Override protected void onStart(){super.onStart();androidx.core.content.ContextCompat.registerReceiver(this,downloadReceiver,new IntentFilter(OfflineDownloadService.STATUS),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);OfflineDownloadService.reconcileStatus(this);main.post(tick);}
     @Override protected void onStop(){main.removeCallbacks(tick);unregisterReceiver(downloadReceiver);super.onStop();}
     @Override protected void onSaveInstanceState(Bundle saved){super.onSaveInstanceState(saved);saved.putBoolean("playlists",playlists);}
-    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);work.shutdownNow();thumbnails.close();if(bound)unbindService(connection);super.onDestroy();}
+    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);work.shutdownNow();thumbnails.close();if(miniPlayer!=null)miniPlayer.close();if(bound)unbindService(connection);super.onDestroy();}
 }
