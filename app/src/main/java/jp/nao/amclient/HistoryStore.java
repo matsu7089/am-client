@@ -21,4 +21,9 @@ final class HistoryStore {
         synchronized(HistoryStore.class){if(!preferences.edit().putString("items",HistoryRecords.record(read(),entity,time).toString()).commit())throw new IOException("履歴を保存できませんでした");}
         context.sendBroadcast(new Intent(CHANGED).setPackage(context.getPackageName()));
     }
+    void remove(MusicEntity entity)throws IOException{
+        if(!HistoryRecords.supported(entity))return;
+        synchronized(HistoryStore.class){if(!preferences.edit().putString("items",HistoryRecords.remove(read(),entity).toString()).commit())throw new IOException("履歴を削除できませんでした");}
+        context.sendBroadcast(new Intent(CHANGED).setPackage(context.getPackageName()));
+    }
 }

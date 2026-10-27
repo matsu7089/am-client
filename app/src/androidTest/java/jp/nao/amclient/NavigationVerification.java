@@ -39,6 +39,7 @@ final class NavigationVerification {
             check(()->find(main.getWindow().getDecorView(),v->v instanceof MiniPlayerView&&v.isShown())==null,"Empty mini player consumes space");
             click(main,"検索タブ");click(main,"アーティスト");onMain(()->((EditText)find(main.getWindow().getDecorView(),v->v instanceof EditText)).setText("入力途中"));
             click(main,"ダウンロードタブ");click(main,"アルバム");check(()->view(main,"ダウンロードタブ").isSelected()&&view(main,"アルバム").isSelected(),"Download categories lost");
+            check(()->find(main.getWindow().getDecorView(),v->v.isShown()&&v instanceof Button&&("楽曲".contentEquals(((Button)v).getText())||"アーティスト".contentEquals(((Button)v).getText())))==null,"Unsupported download tabs remain visible");
             main=recreate(main,MainActivity.class);check(()->view(main,"ダウンロードタブ").isSelected()&&view(main,"アルバム").isSelected(),"Download destination not restored");
             click(main,"検索タブ");check(()->view(main,"アーティスト").isSelected()&&"入力途中".contentEquals(((EditText)find(main.getWindow().getDecorView(),v->v instanceof EditText)).getText()),"Search draft/category lost across navigation/recreation");
             fixture=new File(context.getCacheDir(),"ui-navigation-verification.wav");silentWav(fixture);

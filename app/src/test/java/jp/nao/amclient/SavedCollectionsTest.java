@@ -40,4 +40,28 @@ public class SavedCollectionsTest {
         MusicEntity result=SavedCollections.list("Playlist",Collections.singletonList(saved("track",entity("Playlist","playlist"))),Collections.singletonList(index)).get(0);
         assertEquals("Updated",result.title);assertEquals("https://example.org/cover.jpg",result.artworkUrl);assertTrue(result.canSelectTracks());
     }
+    @Test public void removesExclusiveTracksAndSkipsSharedTracks()throws Exception{
+        MusicEntity album=entity("Album","album"),playlist=entity("Playlist","playlist");List<JSONObject> saved=Arrays.asList(saved("only-album",album),saved("shared",album),saved("only-playlist",playlist));
+        List<JSONObject> indexes=Arrays.asList(SavedCollections.metadata(album,Arrays.asList(entity("Track","only-album"),entity("Track","shared"))),SavedCollections.metadata(playlist,Arrays.asList(entity("Track","shared"),entity("Track","only-playlist"))));
+        SavedCollections.Removal plan=SavedCollections.removal(album,saved,indexes);assertEquals(Collections.singleton("only-album"),plan.delete);assertEquals(Collections.singleton("shared"),plan.shared);assertEquals("playlist",plan.reassign.get("shared").id);
+    }
+    @Test public void allSharedDeletionDoesNotRestoreTheDeletedCollection()throws Exception{
+        MusicEntity album=entity("Album","same"),playlist=entity("Playlist","same");JSONObject item=saved("shared",album),remaining=SavedCollections.metadata(playlist,Collections.singletonList(entity("Track","shared")));
+        SavedCollections.Removal plan=SavedCollections.removal(album,Collections.singletonList(item),Collections.singletonList(remaining));assertTrue(plan.delete.isEmpty());assertEquals(1,plan.shared.size());
+        List<JSONObject> after=Collections.singletonList(SavedCollections.reassign(item,plan.reassign.get("shared")));assertTrue(SavedCollections.list("Album",after,Collections.singletonList(remaining)).isEmpty());assertEquals(1,SavedCollections.list("Playlist",after,Collections.singletonList(remaining)).size());
+    }
+    @Test public void keepsASecondLegacyOriginWithoutRewritingIt()throws Exception{
+        MusicEntity target=entity("Playlist","target"),other=entity("Album","other");JSONObject saved=saved("shared",other),index=SavedCollections.metadata(target,Collections.singletonList(entity("Track","shared")));
+        SavedCollections.Removal plan=SavedCollections.removal(target,Collections.singletonList(saved),Collections.singletonList(index));assertTrue(plan.delete.isEmpty());assertEquals(Collections.singleton("shared"),plan.shared);assertTrue(plan.reassign.isEmpty());
+    }
+    @Test public void unsharedLegacyDownloadsCanBeDeletedWithoutAnIndex()throws Exception{
+        MusicEntity owner=entity("Playlist","legacy");SavedCollections.Removal plan=SavedCollections.removal(owner,Collections.singletonList(saved("old",owner)),Collections.emptyList());assertEquals(Collections.singleton("old"),plan.delete);assertTrue(plan.shared.isEmpty());
+    }
+    @Test public void excludesMissingAndUnrelatedTracksFromDeletion()throws Exception{
+        MusicEntity target=entity("Album","target"),other=entity("Playlist","other");SavedCollections.Removal plan=SavedCollections.removal(target,Collections.singletonList(saved("other",other)),Collections.singletonList(SavedCollections.metadata(target,Collections.singletonList(entity("Track","missing")))));assertTrue(plan.delete.isEmpty());assertTrue(plan.shared.isEmpty());
+    }
+    @Test public void reassignKeepsAudioVariantQualityAndSavedTimestamp()throws Exception{
+        MusicEntity owner=entity("Album","old"),other=entity("Playlist","new");JSONObject item=saved("shared",owner).put("audioVariant","0123456789abcdef0123456789abcdef").put("audioQuality","HIGH").put("savedAt",123).put("audioGroup",2).put("audioStream",1);
+        JSONObject changed=SavedCollections.reassign(item,other);for(String key:new String[]{"id","storage","audioVariant","audioQuality","savedAt","audioGroup","audioStream","bytes","artwork"})assertEquals(item.get(key).toString(),changed.get(key).toString());assertEquals("new",changed.getString("originId"));assertEquals("old",item.getString("originId"));assertFalse(changed.getBoolean("originSelectable"));
+    }
 }

@@ -27,7 +27,7 @@ public class OfflineDownloadService extends Service {
         if(intent==null){stopSelf();return START_NOT_STICKY;}
         if("cancel".equals(intent.getAction())){cancelled=true;if(downloader!=null)downloader.cancel();if(!busy)stopSelf();return START_NOT_STICKY;}
         if(busy)return START_NOT_STICKY;
-        busy=true;active=true;cancelled=false;
+        synchronized(OfflineStore.class){busy=true;active=true;cancelled=false;}
         collectionName=intent.getStringExtra("title");if(collectionName==null)collectionName="曲一覧";
         getSharedPreferences("download",0).edit().putString("collectionId",intent.getStringExtra("id")).putString("collectionType",intent.getStringExtra("type")).apply();
         startForeground(200,notification("曲一覧を確認しています",0,0));

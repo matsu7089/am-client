@@ -37,7 +37,7 @@ final class QualityVerification {
         }finally{if(lease!=null)lease.close();store.removeStream(c,id);}
     }
     private static void check(boolean value,String message){if(!value)throw new AssertionError(message);}
-    private static String manifest(){
+    static String manifest(){
         String pssh=android.util.Base64.encodeToString(PsshAtomUtil.buildPsshAtom(C.WIDEVINE_UUID,new byte[0]),android.util.Base64.NO_WRAP);
         String protection="<ContentProtection schemeIdUri='urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed'><cenc:pssh>"+pssh+"</cenc:pssh></ContentProtection>";
         StringBuilder s=new StringBuilder("<MPD xmlns='urn:mpeg:dash:schema:mpd:2011' xmlns:cenc='urn:mpeg:cenc:2013' type='static' mediaPresentationDuration='PT60S' minBufferTime='PT2S'><Period>");

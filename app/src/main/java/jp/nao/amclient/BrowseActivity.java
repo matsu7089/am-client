@@ -1,6 +1,7 @@
 package jp.nao.amclient;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.*;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
@@ -29,8 +30,12 @@ public class BrowseActivity extends Activity {
     private TextView heading,name,summary,status,empty,downloadStatus;
     private ImageView image;
     private LinearLayout people,tabs;
-    private Button primary,albums,playlistTab,more,download,edit;
+    private Button primary,albums,playlistTab,more,download,edit,library;
     private long playlistRevision=PlaylistApi.revision.get();
+    private long membershipRevision=LibraryApi.revision.get();
+    private LibraryMembership membership;
+    private boolean libraryChanging;
+    private int membershipRequest;
     private MiniPlayerView miniPlayer;
     private MusicEntity pendingDownload;
     private final BroadcastReceiver downloadReceiver=new BroadcastReceiver(){@Override public void onReceive(Context context,Intent intent){updateDownload();}};
@@ -63,6 +68,7 @@ public class BrowseActivity extends Activity {
         LinearLayout actions=row();primary=tab(ARTIST.equals(kind)?"ランダム再生":"全曲を再生",this::playOwner);primary.setEnabled(false);actions.addView(primary);
         download=tab("ダウンロード",this::downloadCollection);download.setVisibility(ARTIST.equals(kind)?View.GONE:View.VISIBLE);download.setEnabled(false);actions.addView(download);root.addView(actions);
         edit=tab("編集",()->PlaylistActivity.open(this,id));edit.setContentDescription("自作プレイリストを編集");edit.setVisibility(View.GONE);actions.addView(edit);
+        library=button("",this::toggleLibrary);library.setVisibility(View.GONE);root.addView(library,new LinearLayout.LayoutParams(-1,dp(48)));
         downloadStatus=text("",12,ACCENT);downloadStatus.setPadding(dp(16),0,dp(16),dp(6));downloadStatus.setVisibility(ARTIST.equals(kind)?View.GONE:View.VISIBLE);root.addView(downloadStatus);
         tabs=row();albums=tab("アルバム",()->switchTab(false));playlistTab=tab("プレイリスト",()->switchTab(true));tabs.addView(albums);tabs.addView(playlistTab);tabs.setVisibility(ARTIST.equals(kind)?View.VISIBLE:View.GONE);root.addView(tabs);updateTabs();
         status=text("読み込んでいます…",12,Color.LTGRAY);status.setPadding(dp(16),dp(8),dp(16),dp(8));root.addView(status);
@@ -77,13 +83,13 @@ public class BrowseActivity extends Activity {
     private void updateTabs(){if(albums==null)return;albums.setSelected(!playlists);playlistTab.setSelected(playlists);albums.setBackgroundColor(!playlists?0xff243c40:Color.TRANSPARENT);playlistTab.setBackgroundColor(playlists?0xff243c40:Color.TRANSPARENT);}
     private void load(boolean append){
         if(isDestroyed()||append&&loading)return;
-        if(NOW.equals(kind)&&(playback==null||playback.contentId.isEmpty())){++requestGeneration;loading=false;seenTrack="";seenOrigin=null;owner=null;items=Collections.emptyList();people.removeAllViews();primary.setEnabled(false);more.setVisibility(View.GONE);adapter.notifyDataSetChanged();thumbnails.bind(image,"");heading.setText("再生元の曲一覧");name.setText("再生中の曲はありません");summary.setText("");status.setText("");empty.setText("検索やライブラリから曲を再生してください。");return;}
+        if(NOW.equals(kind)&&(playback==null||playback.contentId.isEmpty())){++requestGeneration;++membershipRequest;loading=false;seenTrack="";seenOrigin=null;owner=null;membership=null;updateMembership();items=Collections.emptyList();people.removeAllViews();primary.setEnabled(false);more.setVisibility(View.GONE);adapter.notifyDataSetChanged();thumbnails.bind(image,"");heading.setText("再生元の曲一覧");name.setText("再生中の曲はありません");summary.setText("");status.setText("");empty.setText("検索やライブラリから曲を再生してください。");return;}
         final int token=++requestGeneration;final boolean selectedPlaylists=playlists;final String requestedCursor=append?cursor:"";
         final String trackId=NOW.equals(kind)?playback.contentId:"";final MusicEntity metadata=NOW.equals(kind)?playback.currentTrack:null;
         final PlaybackOrigin source=NOW.equals(kind)?playback.origin:null;
         if(NOW.equals(kind)){seenTrack=trackId;seenOrigin=source;}
         loading=true;more.setEnabled(false);status.setText("読み込んでいます…");empty.setText("");
-        edit.setEnabled(false);
+        edit.setEnabled(false);library.setEnabled(false);++membershipRequest;
         if(!append){items=Collections.emptyList();cursor="";adapter.notifyDataSetChanged();more.setVisibility(View.GONE);}
         work.execute(()->{try{
             AmazonApi api=AmazonApi.get(this);MusicEntity track=metadata;CatalogPage page;
@@ -115,6 +121,41 @@ public class BrowseActivity extends Activity {
         boolean random=ARTIST.equals(kind);primary.setText(random?"ランダム再生":owner.hasSelection("PLAY")?"全曲を再生":owner.hasSelection("SHUFFLE")?"シャッフル再生":"おまかせ再生");
         primary.setEnabled(random?(owner.hasSelection("SHUFFLE")||owner.hasSelection("PLAY")):owner.canPlay());
         boolean editable=getIntent().getBooleanExtra("editablePlaylist",false)&&"Playlist".equals(kind)&&(owner.playlistPolicy.rename||owner.playlistPolicy.delete);edit.setVisibility(editable?View.VISIBLE:View.GONE);edit.setEnabled(editable);
+        membership=owner.libraryMembership;updateMembership();
+    }
+    private void updateMembership(){
+        boolean visible=owner!=null&&membership!=null&&membership.canChange;
+        library.setVisibility(visible?View.VISIBLE:View.GONE);
+        if(!visible)return;
+        library.setText(membership.registered?"✓ ライブラリ追加済み":"＋ ライブラリに追加");
+        library.setContentDescription(membership.registered?"ライブラリから削除":"ライブラリに追加");
+        library.setSelected(membership.registered);library.setBackgroundColor(membership.registered?0xff243c40:Color.TRANSPARENT);
+        library.setEnabled(!loading&&!libraryChanging);
+    }
+    private void toggleLibrary(){
+        if(loading||libraryChanging||owner==null||membership==null||!membership.canChange)return;
+        MusicEntity target=owner;
+        if(membership.registered)new AlertDialog.Builder(this).setTitle("ライブラリから削除")
+            .setMessage(target.title+"\nAmazon Music のライブラリから解除します。")
+            .setNegativeButton("キャンセル",null).setPositiveButton("削除",(dialog,which)->changeMembership(target,false)).show();
+        else changeMembership(target,true);
+    }
+    private void changeMembership(MusicEntity target,boolean registered){
+        if(libraryChanging)return;libraryChanging=true;++membershipRequest;updateMembership();
+        work.execute(()->{try{
+            LibraryMembership result=new LibraryApi(AmazonApi.get(this)).set(target,registered);
+            main.post(()->{if(isDestroyed())return;libraryChanging=false;if(sameOwner(target)){membership=result;updateMembership();}else updateMembership();Toast.makeText(this,registered?"ライブラリに追加しました":"ライブラリから削除しました",Toast.LENGTH_SHORT).show();});
+        }catch(Exception issue){main.post(()->{if(isDestroyed())return;libraryChanging=false;if(sameOwner(target))membership=null;updateMembership();Toast.makeText(this,issue.getMessage()==null?"ライブラリを変更できませんでした":issue.getMessage(),Toast.LENGTH_LONG).show();refreshMembership();});}});
+    }
+    private boolean sameOwner(MusicEntity target){return owner!=null&&owner.type.equals(target.type)&&owner.id.equals(target.id);}
+    private void refreshMembership(){
+        if(loading||libraryChanging||owner==null||!"Album".equals(owner.type)&&!"Playlist".equals(owner.type))return;
+        MusicEntity target=owner;int request=++membershipRequest;
+        library.setEnabled(false);
+        work.execute(()->{try{
+            LibraryMembership fresh=new LibraryApi(AmazonApi.get(this)).read(target);
+            main.post(()->{if(isDestroyed()||request!=membershipRequest||!sameOwner(target))return;membership=fresh;updateMembership();});
+        }catch(Exception issue){main.post(()->{if(isDestroyed()||request!=membershipRequest||!sameOwner(target))return;membership=null;updateMembership();status.setText("ライブラリの登録状態を取得できませんでした。再読込してください。");});}});
     }
     private boolean savedPlayback(){return getIntent().getBooleanExtra("downloaded",false)||getIntent().getBooleanExtra("savedOnly",false)||NOW.equals(kind)&&playback!=null&&playback.requiresSavedAudio();}
     private void playOwner(){if(playback==null||owner==null)return;if(ARTIST.equals(kind))playback.playRandom(owner);else if(savedPlayback())playback.playSavedFromCollection(owner,owner);else playback.play(owner);}
@@ -177,9 +218,9 @@ public class BrowseActivity extends Activity {
     private ImageView artwork(){ImageView v=new ImageView(this);v.setScaleType(ImageView.ScaleType.CENTER_CROP);v.setImageResource(R.drawable.ic_music);v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);GradientDrawable bg=new GradientDrawable();bg.setColor(0xff28383e);bg.setCornerRadius(dp(8));v.setBackground(bg);v.setClipToOutline(true);return v;}
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     private String duration(long seconds){return String.format(Locale.ROOT,"%d:%02d",seconds/60,seconds%60);}
-    @Override protected void onStart(){super.onStart();androidx.core.content.ContextCompat.registerReceiver(this,downloadReceiver,new IntentFilter(OfflineDownloadService.STATUS),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);OfflineDownloadService.reconcileStatus(this);long current=PlaylistApi.revision.get();if(playlistRevision!=current){playlistRevision=current;if("Playlist".equals(kind))load(false);}main.post(tick);}
+    @Override protected void onStart(){super.onStart();androidx.core.content.ContextCompat.registerReceiver(this,downloadReceiver,new IntentFilter(OfflineDownloadService.STATUS),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);OfflineDownloadService.reconcileStatus(this);long current=PlaylistApi.revision.get(),registration=LibraryApi.revision.get();boolean changed=playlistRevision!=current||membershipRevision!=registration;playlistRevision=current;membershipRevision=registration;if(changed&&("Playlist".equals(kind)||"Album".equals(kind)||NOW.equals(kind)))load(false);else refreshMembership();main.post(tick);}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==27&&result==RESULT_OK)finish();}
     @Override protected void onStop(){main.removeCallbacks(tick);unregisterReceiver(downloadReceiver);super.onStop();}
     @Override protected void onSaveInstanceState(Bundle saved){super.onSaveInstanceState(saved);saved.putBoolean("playlists",playlists);}
-    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);work.shutdownNow();thumbnails.close();if(miniPlayer!=null)miniPlayer.close();if(bound)unbindService(connection);super.onDestroy();}
+    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);if(libraryChanging)work.shutdown();else work.shutdownNow();thumbnails.close();if(miniPlayer!=null)miniPlayer.close();if(bound)unbindService(connection);super.onDestroy();}
 }

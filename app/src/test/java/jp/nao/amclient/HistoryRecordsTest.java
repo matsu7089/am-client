@@ -50,4 +50,18 @@ public class HistoryRecordsTest {
     @Test public void migratesTheOldLibraryTrackTabToHistory(){
         assertEquals(LibraryCategory.HISTORY,LibraryCategory.restore("TRACKS"));assertEquals(LibraryCategory.HISTORY,LibraryCategory.restore("ARTISTS"));assertEquals(LibraryCategory.ALBUMS,LibraryCategory.restore("ALBUMS"));assertEquals(LibraryCategory.PLAYLISTS,LibraryCategory.restore("PLAYLISTS"));
     }
+    @Test public void removesOnlyTheSelectedTypeAndIdWithoutChangingOtherOrder()throws Exception{
+        JSONArray history=new JSONArray();for(String type:new String[]{"Album","Playlist","Artist"})history=HistoryRecords.record(history,entity(type,"same",type),history.length()+1);
+        JSONArray removed=HistoryRecords.remove(history,entity("Playlist","same","Ignored"));assertEquals(2,removed.length());assertEquals("Artist",removed.getJSONObject(0).getString("__typename"));assertEquals("Album",removed.getJSONObject(1).getString("__typename"));assertEquals(3,removed.getJSONObject(0).getLong("playedAt"));
+    }
+    @Test public void removesEveryDuplicateAndAllowsAFuturePlayToReturn()throws Exception{
+        MusicEntity album=entity("Album","album","Album");JSONArray history=HistoryRecords.record(new JSONArray(),album,1);history.put(history.getJSONObject(0));assertEquals(0,HistoryRecords.remove(history,album).length());
+        JSONArray replayed=HistoryRecords.record(HistoryRecords.remove(history,album),album,2);assertEquals(1,replayed.length());assertEquals(2,replayed.getJSONObject(0).getLong("playedAt"));
+    }
+    @Test public void deletingUnknownHistoryKeepsRemainingMetadata()throws Exception{
+        JSONArray history=HistoryRecords.record(new JSONArray(),entity("Artist","person","Person"),8);assertEquals(history.toString(),HistoryRecords.remove(history,entity("Album","absent","Absent")).toString());
+    }
+    @Test public void migratesOldDownloadSelectionsToAlbums(){
+        for(String value:new String[]{"TRACKS","ARTISTS","invalid",null})assertEquals(DownloadCategory.ALBUMS,DownloadCategory.restore(value));assertEquals(DownloadCategory.PLAYLISTS,DownloadCategory.restore("PLAYLISTS"));assertEquals(2,DownloadCategory.values().length);
+    }
 }

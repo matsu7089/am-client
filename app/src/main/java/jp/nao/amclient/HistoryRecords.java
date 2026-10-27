@@ -25,6 +25,13 @@ final class HistoryRecords {
         JSONArray combined=new JSONArray();if(supported(entity))combined.put(metadata(entity,time));
         if(previous!=null)for(int i=0;i<previous.length();i++)combined.put(previous.opt(i));return normalize(combined);
     }
+    static JSONArray remove(JSONArray previous,MusicEntity entity){
+        JSONArray remaining=new JSONArray();
+        if(previous!=null)for(int i=0;i<previous.length();i++){JSONObject item=previous.optJSONObject(i);if(item==null)continue;
+            if(supported(entity)&&entity.type.equals(item.optString("__typename"))&&entity.id.equals(item.optString("id")))continue;remaining.put(item);
+        }
+        return normalize(remaining);
+    }
     static JSONArray normalize(JSONArray entries){
         Map<String,JSONObject> unique=new LinkedHashMap<>();
         if(entries!=null)for(int i=0;i<entries.length();i++){

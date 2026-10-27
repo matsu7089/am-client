@@ -18,12 +18,14 @@ public final class OfflineStore {
     private static SimpleCache cache;
     private static final AtomicLong networkAudioBytes=new AtomicLong();
     private final File root;
+    private final Context context;
     private static final Map<String,Integer> readers=new HashMap<>();
     public OfflineStore(Context context) {
+        this.context=context.getApplicationContext();
         String account=context.getSharedPreferences("account",0).getString("scope","signed-out");
         root=new File(context.getFilesDir(),"offline/"+account);root.mkdirs();
     }
-    OfflineStore(Context context,String scope){root=new File(context.getFilesDir(),"offline/"+scope);root.mkdirs();}
+    OfflineStore(Context context,String scope){this.context=context.getApplicationContext();root=new File(context.getFilesDir(),"offline/"+scope);root.mkdirs();}
     public static String scope(String customer) throws Exception {
         byte[] hash=MessageDigest.getInstance("SHA-256").digest(customer.getBytes(StandardCharsets.UTF_8));
         StringBuilder b=new StringBuilder();for(byte v:hash)b.append(String.format(Locale.ROOT,"%02x",v));return b.toString();
@@ -55,11 +57,13 @@ public final class OfflineStore {
         return SavedTrack.cachePrefix(root.getName(),id)+(variant.isEmpty()?"":variant+"/");
     }
     final class SavedAudio implements AutoCloseable {
-        final DashPackage dash;final String variant;private final String prefix;private boolean closed;
-        SavedAudio(DashPackage dash,String variant,String prefix){this.dash=dash;this.variant=variant;this.prefix=prefix;readers.put(prefix,readers.getOrDefault(prefix,0)+1);}
-        @Override public void close(){synchronized(OfflineStore.class){if(closed)return;closed=true;int count=readers.getOrDefault(prefix,1)-1;if(count==0)readers.remove(prefix);else readers.put(prefix,count);}}
+        final DashPackage dash;final String variant;private final String prefix,id;private boolean closed;
+        SavedAudio(DashPackage dash,String variant,String prefix,String id){this.dash=dash;this.variant=variant;this.prefix=prefix;this.id=id;readers.put(prefix,readers.getOrDefault(prefix,0)+1);}
+        @Override public void close(){synchronized(OfflineStore.class){if(closed)return;closed=true;int count=readers.getOrDefault(prefix,1)-1;if(count==0)readers.remove(prefix);else readers.put(prefix,count);
+            if(!hasStream(id))try{cleanup(context,id);}catch(Exception ignored){android.util.Log.w("AMDownload","Deferred saved audio cleanup failed");}
+        }}
     }
-    public SavedAudio open(String id)throws Exception{synchronized(OfflineStore.class){JSONObject item=get(id);return new SavedAudio(dash(id,item),SavedTrack.variant(item),prefix(id,SavedTrack.variant(item)));}}
+    public SavedAudio open(String id)throws Exception{synchronized(OfflineStore.class){JSONObject item=get(id);return new SavedAudio(dash(id,item),SavedTrack.variant(item),prefix(id,SavedTrack.variant(item)),id);}}
     public SavedAudio openIfSaved(String id)throws Exception{synchronized(OfflineStore.class){return hasStream(id)?open(id):null;}}
     public boolean matches(String id,AudioQuality quality){try{return hasStream(id)&&SavedTrack.requested(get(id))==quality;}catch(Exception ignored){return false;}}
     public String newVariant(){return UUID.randomUUID().toString().replace("-","");}
@@ -75,6 +79,7 @@ public final class OfflineStore {
                 .put("audioBitrate",dash.format.bitrate).put("audioSampleRate",dash.format.sampleRate);
             if(!new File(directory(track.id),SavedTrack.manifestName(metadata)).isFile())throw new IOException("保存する音源の情報がありません");
             write(new File(directory(track.id),"complete.json"),metadata.toString());
+            new File(directory(track.id),"pending-delete").delete();
         }
     }
     public void discardVariant(Context context,String id,String variant)throws Exception{
@@ -95,6 +100,9 @@ public final class OfflineStore {
                 if(v!=null&&!prefix(id,v).equals(keep)&&!readers.containsKey(prefix(id,v)))file.delete();
                 else if("manifest.mpd".equals(name)&&!legacy&&!readers.containsKey(base))file.delete();
             }
+            boolean pinned=false;for(String reader:readers.keySet())if(reader.startsWith(base)){pinned=true;break;}
+            if(hasStream(id)||!pinned)new File(directory(id),"pending-delete").delete();
+            File[] remaining=directory(id).listFiles();if(remaining!=null&&remaining.length==0)directory(id).delete();
         }
     }
     public void completeStream(MusicEntity track,MusicEntity owner,long bytes)throws Exception{write(new File(directory(track.id),"complete.json"),SavedTrack.metadata(track,owner,bytes).toString());}
@@ -109,14 +117,29 @@ public final class OfflineStore {
         }
     }
     public List<MusicEntity> collections(String type){
-        List<JSONObject> indexes=new ArrayList<>();File[] files=new File(root,"collections").listFiles();
-        if(files!=null)for(File file:files)if(file.getName().endsWith(".json"))try{indexes.add(new JSONObject(read(file)));}catch(Exception ignored){}
-        try{return SavedCollections.list(type,list(),indexes);}catch(JSONException ignored){return Collections.emptyList();}
+        synchronized(OfflineStore.class){try{return SavedCollections.list(type,list(),collectionIndexes(false));}catch(Exception ignored){return Collections.emptyList();}}
+    }
+    private List<JSONObject> collectionIndexes(boolean strict)throws IOException{
+        List<JSONObject> result=new ArrayList<>();File[] files=new File(root,"collections").listFiles();
+        if(files!=null)for(File file:files)if(file.getName().endsWith(".json"))try{JSONObject index=new JSONObject(read(file));JSONObject node=index.optJSONObject("collection");
+            if(node==null||PlaybackOrigin.of(node.optString("__typename"),node.optString("id"))==null||index.optJSONArray("trackIds")==null)throw new JSONException("Invalid collection index");result.add(index);
+        }catch(Exception invalid){if(strict)throw new IOException("保存済みの曲一覧を確認できません。削除を中止しました",invalid);}
+        return result;
+    }
+    SavedCollections.Removal removeCollection(MusicEntity owner)throws Exception{
+        if(PlaybackOrigin.of(owner)==null||!owner.id.matches("[A-Za-z0-9_-]{1,80}"))throw new IllegalArgumentException("Invalid collection id");
+        synchronized(OfflineStore.class){
+            if(OfflineDownloadService.active)throw new IOException("ダウンロードの完了後に削除してください");
+            SavedCollections.Removal plan=SavedCollections.removal(owner,list(),collectionIndexes(true));
+            // Move shared tracks away from the deleted fallback origin before removing its index.
+            for(Map.Entry<String,MusicEntity> entry:plan.reassign.entrySet())write(new File(directory(entry.getKey()),"complete.json"),SavedCollections.reassign(get(entry.getKey()),entry.getValue()).toString());
+            for(String id:plan.delete)removeStream(context,id);
+            File index=new File(root,"collections/"+owner.type+"-"+owner.id+".json");if(index.exists()&&!index.delete())throw new IOException("保存済みの曲一覧を削除できませんでした");
+            return plan;
+        }
     }
     public void removeStream(Context context,String id)throws Exception{
-        String prefix=SavedTrack.cachePrefix(root.getName(),id);dataSource(context,false);
-        for(String key:new ArrayList<>(cache.getKeys()))if(key.startsWith(prefix))cache.removeResource(key);
-        discard(id);
+        synchronized(OfflineStore.class){directory(id).mkdirs();write(new File(directory(id),"pending-delete"),"1");File complete=new File(directory(id),"complete.json");if(complete.exists()&&!complete.delete())throw new IOException("保存音源の情報を削除できませんでした");cleanup(context,id);}
     }
     private File directory(String id) {
         if(!id.matches("[A-Za-z0-9_-]{1,80}"))throw new IllegalArgumentException("Invalid content id");
@@ -131,9 +154,11 @@ public final class OfflineStore {
         write(new File(directory(id),"complete.json"),json.toString());
     }
     public List<JSONObject> list() {
+        synchronized(OfflineStore.class){
         List<JSONObject> result=new ArrayList<>();File[] dirs=root.listFiles();
-        if(dirs!=null)for(File dir:dirs)try{File f=new File(dir,"complete.json");if(f.exists())result.add(new JSONObject(read(f)));}catch(Exception ignored){}
+        if(dirs!=null)for(File dir:dirs)try{File f=new File(dir,"complete.json");if(new File(dir,"pending-delete").isFile()&&!f.exists())cleanup(context,dir.getName());if(f.exists())result.add(new JSONObject(read(f)));}catch(Exception ignored){}
         result.sort(Comparator.comparing(o->o.optString("title")));return result;
+        }
     }
     public JSONObject get(String id) throws Exception {return new JSONObject(read(new File(directory(id),"complete.json")));}
     public DashPackage dash(String id) throws IOException {try{return dash(id,get(id));}catch(IOException e){throw e;}catch(Exception e){throw new IOException("保存音源の情報を確認できません",e);}}

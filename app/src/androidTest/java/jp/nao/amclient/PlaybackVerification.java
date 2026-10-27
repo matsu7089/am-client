@@ -25,6 +25,8 @@ public class PlaybackVerification extends Instrumentation {
     private boolean liveNormalization;
     private boolean uiNavigation;
     private boolean livePlaylist;
+    private boolean uiLocalDeletion;
+    private boolean liveLibrary;
     private ExoPlayer engine;
     private RemoteQueuePlayer transport;
     private MediaSession session;
@@ -36,9 +38,11 @@ public class PlaybackVerification extends Instrumentation {
     private MediaSession automaticSession;
     private MediaController automaticController;
     private android.media.session.MediaController automaticPlatform;
-    @Override public void onCreate(Bundle arguments){super.onCreate(arguments);livePlaylist=arguments!=null&&"true".equals(arguments.getString("livePlaylist"));uiNavigation=arguments!=null&&"true".equals(arguments.getString("uiNavigation"));liveQuality=arguments!=null&&"true".equals(arguments.getString("liveQuality"));liveHistory=arguments!=null&&"true".equals(arguments.getString("liveHistory"));liveDownloaded=arguments!=null&&"true".equals(arguments.getString("liveDownloaded"));liveSavedPriority=arguments!=null&&"true".equals(arguments.getString("liveSavedPriority"));liveNormalization=arguments!=null&&"true".equals(arguments.getString("liveNormalization"));start();}
+    @Override public void onCreate(Bundle arguments){super.onCreate(arguments);liveLibrary=arguments!=null&&"true".equals(arguments.getString("liveLibrary"));uiLocalDeletion=arguments!=null&&"true".equals(arguments.getString("uiLocalDeletion"));livePlaylist=arguments!=null&&"true".equals(arguments.getString("livePlaylist"));uiNavigation=arguments!=null&&"true".equals(arguments.getString("uiNavigation"));liveQuality=arguments!=null&&"true".equals(arguments.getString("liveQuality"));liveHistory=arguments!=null&&"true".equals(arguments.getString("liveHistory"));liveDownloaded=arguments!=null&&"true".equals(arguments.getString("liveDownloaded"));liveSavedPriority=arguments!=null&&"true".equals(arguments.getString("liveSavedPriority"));liveNormalization=arguments!=null&&"true".equals(arguments.getString("liveNormalization"));start();}
     @Override public void onStart(){
         Bundle result=new Bundle();int outcome=Activity.RESULT_CANCELED;
+        if(liveLibrary){try{result.putString("stream","PASS: "+LiveLibraryVerification.run(this)+"\n");outcome=Activity.RESULT_OK;}catch(Throwable failure){result.putString("stream","FAIL: "+failure+"\n");}finish(outcome,result);return;}
+        if(uiLocalDeletion){try{result.putString("stream","PASS: "+LocalDeletionNavigationVerification.run(this)+"\n");outcome=Activity.RESULT_OK;}catch(Throwable failure){result.putString("stream","FAIL: "+failure+"\n");}finish(outcome,result);return;}
         if(livePlaylist){try{result.putString("stream","PASS: "+LivePlaylistVerification.run(this)+"\n");outcome=Activity.RESULT_OK;}catch(Throwable failure){result.putString("stream","FAIL: "+failure+"\n");}finish(outcome,result);return;}
         if(uiNavigation){try{result.putString("stream","PASS: "+NavigationVerification.run(this)+"\n");outcome=Activity.RESULT_OK;}catch(Throwable failure){result.putString("stream","FAIL: "+failure+"\n");}finish(outcome,result);return;}
         if(liveNormalization){try{result.putString("stream","PASS: "+LiveNormalizationVerification.run(this)+"\n");outcome=Activity.RESULT_OK;}catch(Throwable failure){result.putString("stream","FAIL: "+failure+"\n");}finish(outcome,result);return;}
@@ -50,6 +54,7 @@ public class PlaybackVerification extends Instrumentation {
             NormalizationVerification.run(getTargetContext());
             QualityVerification.run(this);
             HistoryVerification.run(getTargetContext());
+            OfflineDeletionVerification.run(getTargetContext());
             CountDownLatch changed=new CountDownLatch(1),platformChanged=new CountDownLatch(1),modeRequested=new CountDownLatch(1),shuffleRequested=new CountDownLatch(1);
             AtomicReference<ListenableFuture<MediaController>> connection=new AtomicReference<>();AtomicInteger nextCalls=new AtomicInteger();
             AtomicReference<SettableFuture<Void>> modeFuture=new AtomicReference<>();

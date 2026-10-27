@@ -5,8 +5,8 @@ final class CatalogQueries {
     private static final String IMAGES="images { url width height imageType } ";
     private static final String ARTISTS="contributingArtists { edges { node { __typename id uri name } } } ";
     private static final String PLAY="playParams { id containerIds selections } ";
-    private static final String ALBUM="__typename id uri title trackCount "+IMAGES+ARTISTS+PLAY;
-    private static final String PLAYLIST="__typename id uri title trackCount "+IMAGES+PLAY;
+    private static final String ALBUM="__typename id uri title trackCount likesContext { state } "+IMAGES+ARTISTS+PLAY;
+    private static final String PLAYLIST="__typename id uri title trackCount followsContext { isFollowed } "+IMAGES+PLAY;
     private static final String EDIT="version eligibility { playlist { canAddTracks canDeletePlaylist canRemoveTracks canRenamePlaylist canReorderTracks } } capabilities { appendTracks { isAllowed } removeTracks { isAllowed } } ";
     private static final String TRACK="__typename id uri title duration "+IMAGES+ARTISTS+PLAY;
     private static final String ARTIST="__typename id uri name "+IMAGES+PLAY;
@@ -14,7 +14,7 @@ final class CatalogQueries {
     static String query(String operation){
         switch(operation){
             case "NativeLibraryTracks":return "query NativeLibraryTracks($cursor:String) { user { libraryTracks(limit:50,cursor:$cursor) { edges { "+PLAY+" node { "+TRACK+" } } "+PAGE+" } } }";
-            case "NativeLibraryAlbums":return "query NativeLibraryAlbums($cursor:String) { user { libraryAlbums(limit:50,cursor:$cursor) { edges { node { "+ALBUM+" } } "+PAGE+" } } }";
+            case "NativeLibraryAlbums":return "query NativeLibraryAlbums($cursor:String) { user { likedAlbums(limit:50,cursor:$cursor) { edges { node { "+ALBUM+" } } "+PAGE+" } } }";
             case "NativeLibraryPlaylists":return "query NativeLibraryPlaylists($ownedCursor:String,$followedCursor:String,$owned:Boolean!,$followed:Boolean!) { user { playlists(limit:50,cursor:$ownedCursor,sortBy:\"LAST_MODIFIED_DATE\") @include(if:$owned) { edges { node { "+PLAYLIST+" } } "+PAGE+" } followedPlaylists(limit:50,cursor:$followedCursor) @include(if:$followed) { edges { node { "+PLAYLIST+" followsContext { isFollowed } } } "+PAGE+" } } }";
             case "NativeTrackMetadata":return "query NativeTrackMetadata($id:String!) { track(id:$id) { "+TRACK+" album { "+ALBUM+" } } }";
             case "NativeHistoryAlbum":return "query NativeHistoryAlbum($id:String!) { album(id:$id) { "+ALBUM+" } }";
@@ -29,6 +29,11 @@ final class CatalogQueries {
             case "NativeUpdatePlaylist":return "mutation NativeUpdatePlaylist($input:BatchUpdatePlaylistInput!) { batchUpdatePlaylist(input:$input) { playlist { id title } } }";
             case "NativeAppendPlaylist":return "mutation NativeAppendPlaylist($id:String!,$track:String!) { appendTracks(playlistId:$id,trackIds:[$track],rejectDuplicateTracks:false) { id } }";
             case "NativeDeletePlaylist":return "mutation NativeDeletePlaylist($id:String!) { deletePlaylist(id:$id) { id isDeleted } }";
+            case "NativeMembershipAlbum":return "query NativeMembershipAlbum($id:String!) { album(id:$id) { __typename id likesContext { state } } }";
+            case "NativeMembershipPlaylist":return "query NativeMembershipPlaylist($id:String!) { playlist(id:$id) { __typename id followsContext { isFollowed } eligibility { playlist { canRenamePlaylist } } } }";
+            case "NativeSetAlbumLike":return "mutation NativeSetAlbumLike($id:String!,$state:String) { setAlbumLikeState(albumId:$id,likeState:$state) { edges { node { __typename id likesContext { state } } } } }";
+            case "NativeFollowPlaylist":return "mutation NativeFollowPlaylist($id:String!) { followPlaylist(id:$id) { playlist { __typename id followsContext { isFollowed } } } }";
+            case "NativeUnfollowPlaylist":return "mutation NativeUnfollowPlaylist($id:String!) { unfollowPlaylist(id:$id) { playlist { __typename id followsContext { isFollowed } } } }";
             default:return null;
         }
     }

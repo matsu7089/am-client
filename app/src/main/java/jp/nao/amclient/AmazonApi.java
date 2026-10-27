@@ -87,7 +87,7 @@ public final class AmazonApi {
         if(category!=SearchCategory.TRACKS&&category!=SearchCategory.ALBUMS)throw new IllegalArgumentException("Unsupported library category");
         boolean tracks=category==SearchCategory.TRACKS;
         JSONObject user=gql(tracks?"NativeLibraryTracks":"NativeLibraryAlbums",new JSONObject().put("cursor",cursor.isEmpty()?JSONObject.NULL:cursor)).getJSONObject("user");
-        return CatalogPage.connection(null,user.getJSONObject(tracks?"libraryTracks":"libraryAlbums"));
+        return tracks?CatalogPage.connection(null,user.getJSONObject("libraryTracks")):LibraryPage.albums(user);
     }
     public MusicEntity savedSelection(JSONObject item)throws Exception{
         PlaybackOrigin source=SavedTrack.origin(item);

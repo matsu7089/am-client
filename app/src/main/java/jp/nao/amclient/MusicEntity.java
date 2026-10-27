@@ -12,6 +12,7 @@ public final class MusicEntity {
     public final boolean ownedPlaylist;
     public final String playlistEntryId,version;
     public final PlaylistPolicy playlistPolicy;
+    final LibraryMembership libraryMembership;
     public static final class ArtistRef {
         public final String id,name;
         ArtistRef(String id,String name){this.id=id;this.name=name;}
@@ -20,6 +21,7 @@ public final class MusicEntity {
     MusicEntity(JSONObject node,boolean owned) {
         id = node.optString("id"); type = node.optString("__typename"); uri = node.optString("uri");
         ownedPlaylist=owned&&"Playlist".equals(type);playlistEntryId=node.optString("nativePlaylistEntryId");version=node.optString("version");playlistPolicy=PlaylistPolicy.from(node);
+        libraryMembership=LibraryMembership.from(node,ownedPlaylist);
         title = node.optString("title", node.optString("name", node.optString("shortTitle", "名称なし")));
         playParams = node.optJSONObject("playParams");
         durationSeconds=node.optLong("duration",0);

@@ -109,7 +109,7 @@ Amazon の案内でも、ブラウザでの購入済み楽曲のダウンロー�
 
 - https://developer.android.com/media/platform/av-capture
 
-ライブラリは LibraryHomePage（おすすめや履歴を含むホーム表示）から、User.libraryTracks / libraryAlbums / playlists / followedPlaylists のカテゴリ別取得へ変更。Chrome DevTools MCP のログイン済みページで実際のクエリとページ送りを確認。各50件、tracks の edge.playParams、playlists の LAST_MODIFIED_DATE 順、followedPlaylists の followsContext.isFollowed を使用する。自作・フォロー中はカーソルを別々に保持し、完了した接続を再取得しない。
+ライブラリは LibraryHomePage（おすすめや履歴を含むホーム表示）から、User.libraryTracks / libraryAlbums / playlists / followedPlaylists のカテゴリ別取得へ変更。Chrome DevTools MCP のログイン済みページで実際のクエリとページ送りを確認。各50件、tracks の edge.playParams、playlists の LAST_MODIFIED_DATE 順、followedPlaylists の followsContext.isFollowed を使用する。自作・フォロー中はカーソルを別々に保持し、完了した接続を再取得しない。0.15.0では公式Webの`/my/albums`の`LikedAlbumsPage`と照合し、アルバムを`User.likedAlbums`へ訂正した。いいね・フォローの追加解除と詳細は[library-membership.md](library-membership.md)を参照。
 
 # 0.7.0: 暗号化された配信音源の保存
 
