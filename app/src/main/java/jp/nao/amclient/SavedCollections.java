@@ -10,6 +10,7 @@ final class SavedCollections {
         if(PlaybackOrigin.of(owner)==null)throw new IllegalArgumentException("Invalid saved collection");
         JSONObject collection=new JSONObject().put("__typename",owner.type).put("id",owner.id).put("title",owner.title).put("uri",owner.uri);
         if(!owner.artworkUrl.isEmpty())collection.put("images",new JSONArray().put(new JSONObject().put("url",owner.artworkUrl).put("width",300)));
+        if(!owner.artworkUrl.isEmpty())collection.put("artworkVersion",ArtworkMetadata.VERSION);
         if(owner.playParams!=null)collection.put("playParams",owner.playParams);
         JSONArray artists=new JSONArray();for(MusicEntity.ArtistRef person:owner.artists)artists.put(new JSONObject().put("node",new JSONObject().put("id",person.id).put("name",person.name)));
         collection.put("contributingArtists",new JSONObject().put("edges",artists));
@@ -43,6 +44,7 @@ final class SavedCollections {
             JSONObject node=new JSONObject().put("__typename",source.type).put("id",source.id).put("title",item.optString("originTitle",MusicEntity.typeLabel(source.type)));
             String artwork=item.optString("originArtwork", "Album".equals(source.type)?item.optString("artwork"):"");
             if(!artwork.isEmpty())node.put("images",new JSONArray().put(new JSONObject().put("url",artwork).put("width",300)));
+            node.put("artworkVersion",item.optInt("originArtworkVersion",0));
             collections.put(key,node);
         }
         return state;
@@ -71,6 +73,6 @@ final class SavedCollections {
         return result;
     }
     static JSONObject reassign(JSONObject item,MusicEntity owner)throws JSONException{
-        JSONObject updated=new JSONObject(item.toString());return updated.put("originType",owner.type).put("originId",owner.id).put("originTitle",owner.title).put("originArtwork",owner.artworkUrl).put("originSelectable",false);
+        JSONObject updated=new JSONObject(item.toString());return updated.put("originType",owner.type).put("originId",owner.id).put("originTitle",owner.title).put("originArtwork",owner.artworkUrl).put("originArtworkVersion",owner.artworkVersion).put("originSelectable",false);
     }
 }

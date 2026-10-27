@@ -23,6 +23,7 @@ public class MainActivity extends Activity {
     private final ExecutorService localWork=Executors.newSingleThreadExecutor();
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ThumbnailLoader thumbnails=new ThumbnailLoader();
+    private LocalArtworkRefresh localArtwork;
     private final Map<SearchCategory,Button> categoryButtons=new EnumMap<>(SearchCategory.class);
     private final Map<LibraryCategory,CatalogPage> libraryPages=new EnumMap<>(LibraryCategory.class);
     private final Map<LibraryCategory,Button> libraryButtons=new EnumMap<>(LibraryCategory.class);
@@ -54,7 +55,7 @@ public class MainActivity extends Activity {
         public void onServiceDisconnected(ComponentName name){playback=null;miniPlayer.update(null);}
     };
     @Override public void onCreate(Bundle saved){
-        super.onCreate(saved);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
+        super.onCreate(saved);localArtwork=new LocalArtworkRefresh(this);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
         LinearLayout root=column();root.setBackgroundColor(BG);
         root.setOnApplyWindowInsetsListener((v,insets)->{v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets.consumeSystemWindowInsets();});
         LinearLayout top=row();heading=text("ライブラリ",24,Color.WHITE);heading.setPadding(dp(16),dp(12),0,dp(12));top.addView(heading,new LinearLayout.LayoutParams(0,-2,1));top.addView(PlayerViews.iconButton(this,PlayerViews.Icon.SETTINGS,"再生設定",()->QualitySettings.show(this,playback)),new LinearLayout.LayoutParams(dp(48),dp(48)));top.addView(PlayerViews.iconButton(this,PlayerViews.Icon.ACCOUNT,"アカウント",this::account),new LinearLayout.LayoutParams(dp(48),dp(48)));root.addView(top);
@@ -123,12 +124,13 @@ public class MainActivity extends Activity {
         }catch(Exception issue){main.post(()->{if(isDestroyed()||token!=requestGeneration)return;loading=false;state.setText(issue.getMessage());empty.setText("ライブラリを読み込めませんでした。ライブラリタブから再試行してください。");more.setEnabled(true);});}});
     }
     private void renderLibrary(CatalogPage page){state.setText("ライブラリ · "+libraryCategory.label+" · "+page.items.size()+"件");empty.setText("登録済みの"+libraryCategory.label+"はありません");adapter.setEntities(page.items);more.setEnabled(true);more.setVisibility(page.cursor.isEmpty()?View.GONE:View.VISIBLE);}
-    private void renderHistory(){List<MusicEntity> items=new HistoryStore(this).list();updateTabs();more.setVisibility(View.GONE);state.setText("ライブラリ · 履歴 · "+items.size()+"件");empty.setText("再生履歴はまだありません。\nアルバム・プレイリスト・アーティストを再生すると、ここに表示されます。");adapter.setHistory(items);}
+    private void renderHistory(){List<MusicEntity> items=new HistoryStore(this).list();updateTabs();more.setVisibility(View.GONE);state.setText("ライブラリ · 履歴 · "+items.size()+"件");empty.setText("再生履歴はまだありません。\nアルバム・プレイリスト・アーティストを再生すると、ここに表示されます。");adapter.setHistory(items);localArtwork.refresh(items,this::refreshLocalArtwork);}
+    private void refreshLocalArtwork(){if(isDestroyed())return;if(downloads)renderDownloads();else if(showingHistory())renderHistory();}
     private void downloadList(){hideKeyboard();getIntent().removeExtra("showDownloads");downloads=true;searchMode=false;category=downloadCategory.source;loading=false;++requestGeneration;categories.setVisibility(View.VISIBLE);more.setVisibility(View.GONE);renderDownloads();refreshDownloadStatus();}
     private void renderDownloads(){
         OfflineStore store=new OfflineStore(this);DownloadCategory requested=downloadCategory;int token=++requestGeneration;updateTabs();loading=true;state.setText("ダウンロードを読み込んでいます…");empty.setText("");adapter.setEntities(Collections.emptyList());
         localWork.execute(()->{List<MusicEntity> items=store.collections(requested.source.type);main.post(()->{if(isDestroyed()||token!=requestGeneration||!downloads)return;loading=false;adapter.setEntities(items);
-            state.setText(getString(R.string.saved_collection_count,requested.source.label,items.size()));empty.setText("保存済みの"+requested.source.label+"はありません。\nアルバム・プレイリストの曲一覧からダウンロードできます。");});});
+            state.setText(getString(R.string.saved_collection_count,requested.source.label,items.size()));empty.setText("保存済みの"+requested.source.label+"はありません。\nアルバム・プレイリストの曲一覧からダウンロードできます。");localArtwork.refresh(items,this::refreshLocalArtwork);});});
     }
     private void refreshDownloadStatus(){String last=OfflineDownloadService.displayStatus(getSharedPreferences("download",0).getString("lastStatus",""));downloadStatus.setVisibility(!last.isEmpty()&&(downloads||showDownloadStatus||OfflineDownloadService.active)?View.VISIBLE:View.GONE);setTextIfChanged(downloadStatus,last);}
     private class CatalogAdapter extends BaseAdapter {
@@ -190,5 +192,5 @@ public class MainActivity extends Activity {
     @Override protected void onStart(){super.onStart();androidx.core.content.ContextCompat.registerReceiver(this,downloadReceiver,new IntentFilter(OfflineDownloadService.STATUS),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);androidx.core.content.ContextCompat.registerReceiver(this,historyReceiver,new IntentFilter(HistoryStore.CHANGED),androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);OfflineDownloadService.reconcileStatus(this);refreshPlaylists();refreshDownloadStatus();if(downloads)renderDownloads();else if(showingHistory())renderHistory();main.post(tick);}
     @Override protected void onStop(){main.removeCallbacks(tick);unregisterReceiver(downloadReceiver);unregisterReceiver(historyReceiver);super.onStop();}
     @Override protected void onSaveInstanceState(Bundle out){super.onSaveInstanceState(out);out.putString("input",input.getText().toString());out.putBoolean("search",searchMode);out.putBoolean("downloads",downloads);out.putString("query",query);out.putString("searchCategory",searchCategory.name());out.putString("libraryCategory",libraryCategory.name());out.putString("downloadCategory",downloadCategory.name());}
-    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);thumbnails.close();miniPlayer.close();if(bound)unbindService(connection);work.shutdownNow();localWork.shutdown();super.onDestroy();}
+    @Override protected void onDestroy(){main.removeCallbacksAndMessages(null);localArtwork.close();thumbnails.close();miniPlayer.close();if(bound)unbindService(connection);work.shutdownNow();localWork.shutdown();super.onDestroy();}
 }

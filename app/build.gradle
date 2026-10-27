@@ -3,7 +3,7 @@ android {
     namespace 'jp.nao.amclient'
     compileSdk 35
     buildFeatures { buildConfig true }
-    defaultConfig { applicationId 'jp.nao.amclient'; minSdk 26; targetSdk 35; versionCode 24; versionName '0.15.0'; testInstrumentationRunner 'jp.nao.amclient.PlaybackVerification' }
+    defaultConfig { applicationId 'jp.nao.amclient'; minSdk 26; targetSdk 35; versionCode 25; versionName '0.15.1'; testInstrumentationRunner 'jp.nao.amclient.PlaybackVerification' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     testOptions { unitTests.returnDefaultValues = true }
 }

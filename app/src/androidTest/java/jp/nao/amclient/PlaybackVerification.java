@@ -55,6 +55,7 @@ public class PlaybackVerification extends Instrumentation {
             QualityVerification.run(this);
             HistoryVerification.run(getTargetContext());
             OfflineDeletionVerification.run(getTargetContext());
+            ArtworkVerification.run(getTargetContext());
             CountDownLatch changed=new CountDownLatch(1),platformChanged=new CountDownLatch(1),modeRequested=new CountDownLatch(1),shuffleRequested=new CountDownLatch(1);
             AtomicReference<ListenableFuture<MediaController>> connection=new AtomicReference<>();AtomicInteger nextCalls=new AtomicInteger();
             AtomicReference<SettableFuture<Void>> modeFuture=new AtomicReference<>();

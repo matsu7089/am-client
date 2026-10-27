@@ -118,7 +118,7 @@ public class BrowseActivity extends Activity {
         List<MusicEntity.ArtistRef> artists=current!=null&&!current.artists.isEmpty()?current.artists:owner.artists;
         if(!ARTIST.equals(kind))for(MusicEntity.ArtistRef person:artists){Button link=button(person.name+" ›",()->artist(this,person.id));link.setContentDescription(person.name+"のアーティストページを開く");people.addView(link,new LinearLayout.LayoutParams(-2,dp(48)));}
         summary.setText(NOW.equals(kind)?"再生中: "+(current==null?"":current.title):ARTIST.equals(kind)&&!owner.hasSelection("PLAY")?"アーティスト · Amazon の選曲でシャッフル":MusicEntity.typeLabel(owner.type));
-        boolean random=ARTIST.equals(kind);primary.setText(random?"ランダム再生":owner.hasSelection("PLAY")?"全曲を再生":owner.hasSelection("SHUFFLE")?"シャッフル再生":"おまかせ再生");
+        boolean random=ARTIST.equals(kind);primary.setText(random?"ランダム再生":owner.hasSelection("PLAY")?"全曲を再生":owner.hasSelection("SHUFFLE")?"シャッフル再生":"ステーション再生");
         primary.setEnabled(random?(owner.hasSelection("SHUFFLE")||owner.hasSelection("PLAY")):owner.canPlay());
         boolean editable=getIntent().getBooleanExtra("editablePlaylist",false)&&"Playlist".equals(kind)&&(owner.playlistPolicy.rename||owner.playlistPolicy.delete);edit.setVisibility(editable?View.VISIBLE:View.GONE);edit.setEnabled(editable);
         membership=owner.libraryMembership;updateMembership();
@@ -196,7 +196,8 @@ public class BrowseActivity extends Activity {
             h.title.setText((active?"▶ ":track?(position+1)+"　":"")+entity.title);h.title.setTextColor(active?ACCENT:Color.WHITE);
             h.subtitle.setText(entity.subtitle+(track&&entity.durationSeconds>0?" · "+duration(entity.durationSeconds):entity.canSelectTracks()?"　曲を選んで再生":""));
             String artwork=entity.artworkUrl;if(artwork.isEmpty()&&owner!=null&&track)artwork=owner.artworkUrl;thumbnails.bind(h.image,artwork);
-            h.action.setText(!track?"開く":entity.hasSelection("PLAY")?"再生":entity.hasSelection("SHUFFLE")?"シャッフル":entity.hasSelection("STATION")?"おまかせ":"再生不可");h.action.setEnabled(!track||entity.canPlay());h.action.setAlpha(h.action.isEnabled()?1f:.4f);h.action.setContentDescription(entity.title+(!track?"の曲一覧を開く":"を再生"));
+            h.action.setText(!track?"開く":entity.hasSelection("PLAY")?"再生":entity.hasSelection("SHUFFLE")?"シャッフル再生":entity.hasSelection("STATION")?"ステーション再生":"再生不可");h.action.setEnabled(!track||entity.canPlay());h.action.setAlpha(h.action.isEnabled()?1f:.4f);h.action.setContentDescription(entity.title+(!track?"の曲一覧を開く":"を再生"));
+            h.action.setLayoutParams(new LinearLayout.LayoutParams(dp(track&&!entity.hasSelection("PLAY")&&entity.canPlay()?120:80),dp(48)));
             h.action.setOnClickListener(v->openItem(entity));recycled.setOnClickListener(v->openItem(entity));recycled.setBackgroundColor(active?0xff243c40:Color.TRANSPARENT);return recycled;
         }
     }

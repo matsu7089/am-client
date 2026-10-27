@@ -9,6 +9,7 @@ public final class MusicEntity {
     public final List<ArtistRef> artists;
     public final MusicEntity album;
     public final long durationSeconds;
+    final int artworkVersion;
     public final boolean ownedPlaylist;
     public final String playlistEntryId,version;
     public final PlaylistPolicy playlistPolicy;
@@ -25,6 +26,7 @@ public final class MusicEntity {
         title = node.optString("title", node.optString("name", node.optString("shortTitle", "名称なし")));
         playParams = node.optJSONObject("playParams");
         durationSeconds=node.optLong("duration",0);
+        artworkVersion=node.optInt("artworkVersion",0);
         album="Track".equals(type)&&node.optJSONObject("album")!=null?new MusicEntity(node.optJSONObject("album")):null;
         JSONArray images=node.optJSONArray("images");
         if((images==null||images.length()==0)&&node.optJSONObject("album")!=null)images=node.optJSONObject("album").optJSONArray("images");
@@ -55,14 +57,18 @@ public final class MusicEntity {
         return false;
     }
     static String selectArtwork(JSONArray images) {
-        String best="";int bestScore=Integer.MAX_VALUE;
+        String best="";int bestType=Integer.MAX_VALUE,bestShape=Integer.MAX_VALUE;long bestSize=Long.MAX_VALUE;
         if(images!=null)for(int i=0;i<images.length();i++) {
             JSONObject image=images.optJSONObject(i);if(image==null)continue;
             String url=image.optString("url");
             try{java.net.URI parsed=java.net.URI.create(url);if(!"https".equalsIgnoreCase(parsed.getScheme())||parsed.getHost()==null||parsed.getUserInfo()!=null)continue;}catch(IllegalArgumentException invalid){continue;}
-            int width=image.optInt("width",500);
-            int score=("BACKGROUND".equals(image.optString("imageType"))?100000:0)+(width>=160?width:10000-width);
-            if(score<bestScore){bestScore=score;best=url;}
+            // Playlist images can include an untyped, landscape Amazon logo before the cover.
+            // Match the web client's preference for PRIMARY artwork, then square images.
+            String type=image.optString("imageType");int rank="PRIMARY".equals(type)?0:"BACKGROUND".equals(type)?2:1;
+            int width=image.optInt("width",0),height=image.optInt("height",0);
+            int shape=width>0&&height>0?(width==height?0:2):1;
+            long size=width<=0?500:width>=160?width:10000L-width;
+            if(rank<bestType||rank==bestType&&(shape<bestShape||shape==bestShape&&(size<bestSize||size==bestSize&&url.compareTo(best)<0))){bestType=rank;bestShape=shape;bestSize=size;best=url;}
         }
         return best;
     }

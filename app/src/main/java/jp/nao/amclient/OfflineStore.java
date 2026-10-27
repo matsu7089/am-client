@@ -72,8 +72,9 @@ public final class OfflineStore {
         synchronized(OfflineStore.class){
             prefix(track.id,variant);JSONObject metadata=SavedTrack.metadata(track,owner,bytes);
             // Preserve a more useful on-demand origin when replacing an existing download.
-            if(hasStream(track.id)){JSONObject old=get(track.id);if(old.optBoolean("originSelectable")&&!metadata.optBoolean("originSelectable"))
-                for(String key:new String[]{"originType","originId","originTitle","originArtwork","originSelectable"})metadata.put(key,old.get(key));}
+            if(hasStream(track.id)){JSONObject old=get(track.id);if(old.optBoolean("originSelectable")&&!metadata.optBoolean("originSelectable")){
+                for(String key:new String[]{"originType","originId","originTitle","originArtwork","originSelectable"})metadata.put(key,old.get(key));
+                metadata.put("originArtworkVersion",old.optInt("originArtworkVersion",0));}}
             metadata.put("audioVariant",variant).put("audioQuality",dash.quality.name()).put("requestedQuality",dash.requested.name())
                 .put("audioGroup",dash.streamKey.groupIndex).put("audioStream",dash.streamKey.streamIndex)
                 .put("audioBitrate",dash.format.bitrate).put("audioSampleRate",dash.format.sampleRate);
@@ -118,6 +119,20 @@ public final class OfflineStore {
     }
     public List<MusicEntity> collections(String type){
         synchronized(OfflineStore.class){try{return SavedCollections.list(type,list(),collectionIndexes(false));}catch(Exception ignored){return Collections.emptyList();}}
+    }
+    boolean refreshArtwork(MusicEntity fresh)throws Exception{
+        if(!"Playlist".equals(fresh.type)||fresh.artworkUrl.isEmpty()||!fresh.id.matches("[A-Za-z0-9_-]{1,80}"))return false;
+        synchronized(OfflineStore.class){boolean changed=false;
+            // Re-read under the deletion/download lock; never recreate a removed collection.
+            File index=new File(root,"collections/Playlist-"+fresh.id+".json");
+            if(index.isFile()){JSONObject saved=new JSONObject(read(index)),node=saved.optJSONObject("collection");
+                if(node!=null&&ArtworkMetadata.update(node,fresh)){write(index,saved.toString());changed=true;}}
+            for(JSONObject item:list())if(fresh.type.equals(item.optString("originType"))&&fresh.id.equals(item.optString("originId"))&&item.optInt("originArtworkVersion",0)<ArtworkMetadata.VERSION){
+                item.put("originArtwork",fresh.artworkUrl).put("originArtworkVersion",ArtworkMetadata.VERSION);
+                write(new File(directory(item.getString("id")),"complete.json"),item.toString());changed=true;
+            }
+            return changed;
+        }
     }
     private List<JSONObject> collectionIndexes(boolean strict)throws IOException{
         List<JSONObject> result=new ArrayList<>();File[] files=new File(root,"collections").listFiles();

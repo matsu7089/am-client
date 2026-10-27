@@ -12,12 +12,13 @@ final class SavedTrack {
             .put("artwork",track.artworkUrl.isEmpty()?owner.artworkUrl:track.artworkUrl).put("storage",STREAM)
             .put("savedAt",System.currentTimeMillis()).put("bytes",bytes);
         return item.put("originType",owner.type).put("originId",owner.id).put("originTitle",owner.title).put("originArtwork",owner.artworkUrl)
+            .put("originArtworkVersion",owner.artworkUrl.isEmpty()?0:ArtworkMetadata.VERSION)
             .put("originSelectable",owner.hasSelection("PLAY")&&track.hasSelection("PLAY"));
     }
     static JSONObject refreshContext(JSONObject item,MusicEntity track,MusicEntity owner)throws JSONException{
         if(item.optBoolean("originSelectable")&&!(owner.hasSelection("PLAY")&&track.hasSelection("PLAY")))return item;
         JSONObject updated=new JSONObject(item.toString()),context=metadata(track,owner,item.optLong("bytes"));
-        for(String key:new String[]{"title","artist","artwork","originType","originId","originTitle","originArtwork","originSelectable"})updated.put(key,context.get(key));
+        for(String key:new String[]{"title","artist","artwork","originType","originId","originTitle","originArtwork","originArtworkVersion","originSelectable"})updated.put(key,context.get(key));
         return updated;
     }
     static AudioQuality quality(JSONObject item){return AudioQuality.parse(item.optString("audioQuality"),AudioQuality.LOW);}

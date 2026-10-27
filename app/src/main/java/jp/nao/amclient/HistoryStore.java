@@ -26,4 +26,11 @@ final class HistoryStore {
         synchronized(HistoryStore.class){if(!preferences.edit().putString("items",HistoryRecords.remove(read(),entity).toString()).commit())throw new IOException("履歴を削除できませんでした");}
         context.sendBroadcast(new Intent(CHANGED).setPackage(context.getPackageName()));
     }
+    boolean refreshArtwork(MusicEntity fresh)throws Exception{
+        synchronized(HistoryStore.class){JSONArray entries=read();boolean changed=false;
+            for(int i=0;i<entries.length();i++){JSONObject node=entries.optJSONObject(i);if(node!=null)changed|=ArtworkMetadata.update(node,fresh);}
+            if(changed&&!preferences.edit().putString("items",entries.toString()).commit())throw new IOException("表紙を保存できませんでした");
+            return changed;
+        }
+    }
 }

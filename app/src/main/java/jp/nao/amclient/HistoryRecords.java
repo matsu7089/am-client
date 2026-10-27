@@ -13,11 +13,13 @@ final class HistoryRecords {
         PlaybackOrigin origin=SavedTrack.origin(item);if(origin==null)return null;
         JSONObject node=new JSONObject().put("__typename",origin.type).put("id",origin.id).put("title",item.optString("originTitle",MusicEntity.typeLabel(origin.type)));
         String artwork=item.optString("originArtwork");if(!artwork.isEmpty())node.put("images",new JSONArray().put(new JSONObject().put("url",artwork).put("width",300)));
+        node.put("artworkVersion",item.optInt("originArtworkVersion",0));
         return new MusicEntity(node);
     }
     private static JSONObject metadata(MusicEntity entity,long time)throws JSONException{
         JSONObject node=new JSONObject().put("__typename",entity.type).put("id",entity.id).put("title",entity.title).put("playedAt",time);
         if(!entity.artworkUrl.isEmpty())node.put("images",new JSONArray().put(new JSONObject().put("url",entity.artworkUrl).put("width",300)));
+        if(!entity.artworkUrl.isEmpty())node.put("artworkVersion",ArtworkMetadata.VERSION);
         JSONArray artists=new JSONArray();for(MusicEntity.ArtistRef artist:entity.artists)artists.put(new JSONObject().put("node",new JSONObject().put("id",artist.id).put("name",artist.name)));
         node.put("contributingArtists",new JSONObject().put("edges",artists));return node;
     }
